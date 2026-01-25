@@ -14,12 +14,17 @@ Run:
 
 from celery import Celery
 from celery_salt import event, subscribe
-from celery_salt.integrations.dispatcher import create_topic_dispatcher, get_subscribed_routing_keys
+from celery_salt.integrations.dispatcher import (
+    create_topic_dispatcher,
+    get_subscribed_routing_keys,
+)
+
 
 # Define the event schema (must match publisher)
 @event("user.signup.completed")
 class UserSignupCompleted:
     """Event published when a user completes signup."""
+
     user_id: int
     email: str
     company_id: int
@@ -36,34 +41,10 @@ app.conf.result_serializer = "json"
 app.conf.timezone = "UTC"
 app.conf.enable_utc = True
 
-# Create the dispatcher task
+# Create the dispatcher task first (needed for routing)
 dispatcher = create_topic_dispatcher(app)
 
-# Configure queue routing for the dispatcher
-from celery_salt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
-
-app.conf.task_routes = {
-    DEFAULT_DISPATCHER_TASK_NAME: {
-        "queue": "celerysalt_events",
-        "exchange": DEFAULT_EXCHANGE_NAME,
-        "exchange_type": "topic",
-        "routing_key": DEFAULT_DISPATCHER_TASK_NAME,
-    },
-}
-
-# Declare exchange and queue
-from kombu import Exchange, Queue
-
-app.conf.task_queues = (
-    Queue(
-        "celerysalt_events",
-        exchange=Exchange(DEFAULT_EXCHANGE_NAME, type="topic"),
-        routing_key="#",  # Bind to all routing keys
-    ),
-)
-
-
-# Subscribe to events
+# Subscribe to events (must be before queue setup so handlers are registered)
 @subscribe("user.signup.completed", autoretry_for=(Exception,), max_retries=3)
 def send_welcome_email(data: UserSignupCompleted):
     """Send welcome email to new user."""
@@ -83,9 +64,58 @@ def update_user_analytics(data: UserSignupCompleted):
 @subscribe("user.signup.completed")
 def notify_admin(data: UserSignupCompleted):
     """Notify admin about new signup."""
-    print(f"🔔 Admin notification: New user {data.email} signed up via {data.signup_source}")
+    print(
+        f"🔔 Admin notification: New user {data.email} signed up via {data.signup_source}"
+    )
     # In a real app, you'd send admin notification here
     return f"Admin notified about user {data.user_id}"
+
+
+# Configure queue routing AFTER handlers are registered
+from celery_salt.core.decorators import (
+    DEFAULT_EXCHANGE_NAME,
+    DEFAULT_DISPATCHER_TASK_NAME,
+)
+from kombu import Exchange, Queue, binding
+
+# Create topic exchange
+tchu_exchange = Exchange(DEFAULT_EXCHANGE_NAME, type="topic", durable=True)
+
+# Get subscribed routing keys (handlers are now registered)
+routing_keys = get_subscribed_routing_keys(celery_app=app, force_import=False)
+
+# Create bindings for each routing key
+if routing_keys:
+    bindings_list = [binding(tchu_exchange, routing_key=key) for key in routing_keys]
+else:
+    # Fallback: bind to all routing keys if no handlers found
+    bindings_list = [binding(tchu_exchange, routing_key="#")]
+
+# Declare queue with bindings
+queue_name = "celerysalt_events"
+event_queue = Queue(
+    queue_name,
+    exchange=tchu_exchange,
+    bindings=bindings_list,
+    durable=True,
+    auto_delete=False,
+)
+
+# Set queues - this tells Celery to ONLY consume from these queues
+app.conf.task_queues = (event_queue,)
+
+# Set as default queue so worker consumes from it
+app.conf.task_default_queue = queue_name
+
+# Configure queue routing for the dispatcher
+app.conf.task_routes = {
+    DEFAULT_DISPATCHER_TASK_NAME: {
+        "queue": queue_name,
+    },
+}
+
+# IMPORTANT: The queue is bound to the topic exchange (tchu_exchange)
+# Messages published to the topic exchange with matching routing keys will be delivered to this queue
 
 
 if __name__ == "__main__":

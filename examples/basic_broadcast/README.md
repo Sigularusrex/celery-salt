@@ -35,9 +35,19 @@ When you publish a `user.signup.completed` event, all three subscribers will rec
    docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
    ```
 
-2. **Install dependencies**
+2. **Install CelerySalt in development mode**
+   
+   Since the package isn't published yet, install it in editable mode:
    ```bash
-   pip install celery celerysalt kombu
+   # From the project root (celery-salt/)
+   pip install -e .
+   ```
+   
+   This makes `celery_salt` available for import without publishing to PyPI.
+
+3. **Install other dependencies**
+   ```bash
+   pip install celery kombu
    ```
 
 ## Running the Example
@@ -52,10 +62,10 @@ celery -A subscriber worker --loglevel=info
 You should see:
 ```
 [tasks]
-  . celerysalt.dispatch_event
-  . celerysalt.user.signup.completed.send_welcome_email
-  . celerysalt.user.signup.completed.update_user_analytics
-  . celerysalt.user.signup.completed.notify_admin
+  . celery_salt.dispatch_event
+  . celery_salt.user.signup.completed.send_welcome_email
+  . celery_salt.user.signup.completed.update_user_analytics
+  . celery_salt.user.signup.completed.notify_admin
 ```
 
 ### Terminal 2: Run the Publisher

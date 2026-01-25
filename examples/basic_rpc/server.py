@@ -15,12 +15,17 @@ Run:
 
 from celery import Celery
 from celery_salt import event, subscribe, RPCError
-from celery_salt.integrations.dispatcher import create_topic_dispatcher, get_subscribed_routing_keys
+from celery_salt.integrations.dispatcher import (
+    create_topic_dispatcher,
+    get_subscribed_routing_keys,
+)
+
 
 # Define the RPC request schema (must match client)
 @event("rpc.calculator.add", mode="rpc")
 class CalculatorAddRequest:
     """RPC request to add two numbers."""
+
     a: float
     b: float
 
@@ -29,6 +34,7 @@ class CalculatorAddRequest:
 @event.response("rpc.calculator.add")
 class CalculatorAddResponse:
     """Response from calculator add operation."""
+
     result: float
     operation: str = "add"
 
@@ -37,6 +43,7 @@ class CalculatorAddResponse:
 @event.error("rpc.calculator.add")
 class CalculatorAddError:
     """Error response from calculator add operation."""
+
     error_code: str
     error_message: str
     details: dict | None = None
@@ -52,62 +59,80 @@ app.conf.result_serializer = "json"
 app.conf.timezone = "UTC"
 app.conf.enable_utc = True
 
-# Create the dispatcher task
+# Create the dispatcher task first (needed for routing)
 dispatcher = create_topic_dispatcher(app)
 
-# Configure queue routing for the dispatcher
-from celery_salt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
 
-app.conf.task_routes = {
-    DEFAULT_DISPATCHER_TASK_NAME: {
-        "queue": "celerysalt_events",
-        "exchange": DEFAULT_EXCHANGE_NAME,
-        "exchange_type": "topic",
-        "routing_key": DEFAULT_DISPATCHER_TASK_NAME,
-    },
-}
-
-# Declare exchange and queue
-from kombu import Exchange, Queue
-
-app.conf.task_queues = (
-    Queue(
-        "celerysalt_events",
-        exchange=Exchange(DEFAULT_EXCHANGE_NAME, type="topic"),
-        routing_key="#",  # Bind to all routing keys
-    ),
-)
-
-
-# RPC Handler
+# RPC Handler (must be before queue setup so handlers are registered)
 @subscribe("rpc.calculator.add")
 def handle_calculator_add(data: CalculatorAddRequest) -> CalculatorAddResponse:
     """
     Handle calculator add RPC request.
-    
+
     Returns:
         CalculatorAddResponse: The result of the addition
     """
     print(f"🔢 Processing RPC request: {data.a} + {data.b}")
-    
+
     # Validate inputs (example: prevent division by zero scenarios)
     if abs(data.a) > 1e10 or abs(data.b) > 1e10:
         raise RPCError(
             error_code="VALUE_TOO_LARGE",
             error_message="Input values are too large",
-            details={"a": data.a, "b": data.b, "max": 1e10}
+            details={"a": data.a, "b": data.b, "max": 1e10},
         )
-    
+
     # Perform calculation
     result = data.a + data.b
-    
+
     print(f"  ✅ Result: {result}")
-    
+
     # Return response (will be validated against CalculatorAddResponse schema)
-    return CalculatorAddResponse(
-        result=result,
-        operation="add"
-    )
+    return CalculatorAddResponse(result=result, operation="add")
+
+
+# Configure queue routing AFTER handlers are registered
+from celery_salt.core.decorators import (
+    DEFAULT_EXCHANGE_NAME,
+    DEFAULT_DISPATCHER_TASK_NAME,
+)
+from kombu import Exchange, Queue, binding
+
+# Create topic exchange
+tchu_exchange = Exchange(DEFAULT_EXCHANGE_NAME, type="topic", durable=True)
+
+# Get subscribed routing keys (handlers are now registered)
+routing_keys = get_subscribed_routing_keys(celery_app=app, force_import=False)
+
+# Create bindings for each routing key
+if routing_keys:
+    bindings_list = [binding(tchu_exchange, routing_key=key) for key in routing_keys]
+else:
+    # Fallback: bind to all routing keys if no handlers found
+    bindings_list = [binding(tchu_exchange, routing_key="#")]
+
+# Declare queue with bindings
+queue_name = "celerysalt_events"
+event_queue = Queue(
+    queue_name,
+    exchange=tchu_exchange,
+    bindings=bindings_list,
+    durable=True,
+    auto_delete=False,
+)
+
+# Set queues - this tells Celery to ONLY consume from these queues
+app.conf.task_queues = (event_queue,)
+
+# Set as default queue so worker consumes from it
+app.conf.task_default_queue = queue_name
+
+# Configure queue routing for the dispatcher
+app.conf.task_routes = {
+    DEFAULT_DISPATCHER_TASK_NAME: {
+        "queue": queue_name,
+    },
+}
 
 
 if __name__ == "__main__":

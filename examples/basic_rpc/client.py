@@ -17,6 +17,8 @@ from celery import Celery
 from celery_salt import event, RPCError
 
 # Configure Celery (required for RPC calls)
+from celery_salt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
+
 app = Celery("client")
 app.conf.broker_url = "amqp://guest:guest@localhost:5672//"
 app.conf.result_backend = "redis://localhost:6379/0"  # Required for RPC
@@ -25,6 +27,15 @@ app.conf.accept_content = ["json"]
 app.conf.result_serializer = "json"
 app.conf.timezone = "UTC"
 app.conf.enable_utc = True
+
+# Configure routing: route dispatcher task to topic exchange
+# This allows Celery's send_task() to publish to the topic exchange
+app.conf.task_routes = {
+    DEFAULT_DISPATCHER_TASK_NAME: {
+        "exchange": DEFAULT_EXCHANGE_NAME,
+        "exchange_type": "topic",
+    },
+}
 
 # Set the Celery app as the default
 app.set_default()

@@ -11,15 +11,22 @@ import uuid
 from typing import Any, Dict, Optional
 
 from celery_salt.utils.json_encoder import dumps_message
-from celery_salt.core.exceptions import PublishError, TimeoutError as CelerySaltTimeoutError
+from celery_salt.core.exceptions import (
+    PublishError,
+    TimeoutError as CelerySaltTimeoutError,
+)
 from celery_salt.logging.handlers import get_logger
-from celery_salt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
+from celery_salt.core.decorators import (
+    DEFAULT_EXCHANGE_NAME,
+    DEFAULT_DISPATCHER_TASK_NAME,
+)
 
 logger = get_logger(__name__)
 
 # Try to import Celery (optional for serverless)
 try:
     from celery import current_app
+
     CELERY_AVAILABLE = True
 except ImportError:
     CELERY_AVAILABLE = False
@@ -28,6 +35,7 @@ except ImportError:
 # Try to import kombu (required for serverless fallback)
 try:
     from kombu import Connection, Exchange, Producer
+
     KOMBU_AVAILABLE = True
 except ImportError:
     KOMBU_AVAILABLE = False
@@ -77,28 +85,77 @@ def publish_event(
         }
         serialized_body = dumps_message(body_with_meta)
 
-        # Try Celery first (if available)
+        # If broker_url is explicitly provided, prefer kombu (for examples and serverless)
+        # This ensures messages go to the topic exchange, not Celery's default direct exchange
+        if broker_url is not None:
+            if not KOMBU_AVAILABLE:
+                raise PublishError(
+                    "broker_url provided but kombu not installed. "
+                    "Install kombu: pip install kombu"
+                )
+
+            # Use kombu directly (ensures topic exchange routing)
+            _publish_via_kombu(
+                broker_url=broker_url,
+                exchange_name=exchange_name,
+                routing_key=topic,
+                message_body=serialized_body,
+                dispatcher_task_name=dispatcher_task_name,
+                message_id=message_id,
+            )
+
+            logger.info(
+                f"Published message {message_id} to routing key '{topic}' (via kombu)",
+                extra={"routing_key": topic, "message_id": message_id},
+            )
+
+            return message_id
+
+        # Try Celery (if available and no broker_url provided)
+        # Note: For Celery to work with topic exchanges, the app must be configured
+        # with task_routes that route the dispatcher task to the topic exchange.
+        # If not configured, we fall back to kombu.
         if CELERY_AVAILABLE:
             try:
                 app = celery_app or current_app
                 if app is not None:
-                    # Send task to dispatcher with routing_key in properties
-                    app.send_task(
-                        dispatcher_task_name,
-                        args=[serialized_body],
-                        kwargs={"routing_key": topic},
-                        routing_key=topic,  # Used by AMQP for routing to queues
-                        task_id=message_id,
-                    )
+                    # Check if routing is configured for topic exchange
+                    # If task_routes has the dispatcher task configured with topic exchange, use Celery
+                    routes = getattr(app.conf, "task_routes", {})
+                    dispatcher_route = routes.get(dispatcher_task_name, {})
 
-                    logger.info(
-                        f"Published message {message_id} to routing key '{topic}' (via Celery)",
-                        extra={"routing_key": topic, "message_id": message_id},
-                    )
+                    # If route is configured with topic exchange, use Celery
+                    if (
+                        dispatcher_route.get("exchange") == exchange_name
+                        and dispatcher_route.get("exchange_type") == "topic"
+                    ):
+                        # Send task - Celery will use the configured topic exchange
+                        app.send_task(
+                            dispatcher_task_name,
+                            args=[serialized_body],
+                            kwargs={"routing_key": topic},
+                            routing_key=topic,  # This will be used with the topic exchange
+                            task_id=message_id,
+                        )
 
-                    return message_id
-            except (AttributeError, RuntimeError):
-                # Celery app not available or not configured, fall through to kombu
+                        logger.info(
+                            f"Published message {message_id} to routing key '{topic}' (via Celery)",
+                            extra={"routing_key": topic, "message_id": message_id},
+                        )
+
+                        return message_id
+                    else:
+                        # Routing not configured for topic exchange, fall through to kombu
+                        logger.debug(
+                            f"Celery routing not configured for topic exchange, using kombu. "
+                            f"Configure task_routes for {dispatcher_task_name} to use topic exchange."
+                        )
+                        raise AttributeError("Topic exchange routing not configured")
+            except (AttributeError, RuntimeError) as e:
+                # Celery app not available or routing not configured, fall through to kombu
+                logger.debug(
+                    f"Celery publish not available, falling back to kombu: {e}"
+                )
                 pass
 
         # Fallback to kombu for serverless environments
@@ -134,7 +191,9 @@ def publish_event(
     except PublishError:
         raise
     except Exception as e:
-        logger.error(f"Failed to publish message to routing key '{topic}': {e}", exc_info=True)
+        logger.error(
+            f"Failed to publish message to routing key '{topic}': {e}", exc_info=True
+        )
         raise PublishError(f"Failed to publish message: {e}")
 
 
@@ -212,14 +271,14 @@ def call_rpc(
     import time
 
     start_time = time.time()
-    
+
     # RPC requires Celery (for result backend)
     if not CELERY_AVAILABLE:
         raise PublishError(
             "RPC calls require Celery (for result backend). "
             "Install celery for RPC support: pip install celery"
         )
-    
+
     app = celery_app or current_app
     if app is None:
         raise PublishError("Celery app required for RPC calls")
@@ -235,12 +294,27 @@ def call_rpc(
         }
         serialized_body = dumps_message(body_with_meta)
 
+        # Check if routing is configured for topic exchange
+        # If not, the message won't reach the topic exchange
+        routes = getattr(app.conf, "task_routes", {})
+        dispatcher_route = routes.get(dispatcher_task_name, {})
+
+        if (
+            dispatcher_route.get("exchange") != exchange_name
+            or dispatcher_route.get("exchange_type") != "topic"
+        ):
+            logger.warning(
+                f"RPC routing not configured for topic exchange. "
+                f"Configure task_routes for {dispatcher_task_name} to use topic exchange. "
+                f"Falling back to default routing (may not work)."
+            )
+
         # Send task to dispatcher and wait for result
         result = app.send_task(
             dispatcher_task_name,
             args=[serialized_body],
             kwargs={"routing_key": topic},
-            routing_key=topic,
+            routing_key=topic,  # This will be used with the configured topic exchange
             task_id=message_id,
         )
 
@@ -304,5 +378,7 @@ def call_rpc(
     except (PublishError, CelerySaltTimeoutError):
         raise
     except Exception as e:
-        logger.error(f"Failed to execute RPC call to routing key '{topic}': {e}", exc_info=True)
+        logger.error(
+            f"Failed to execute RPC call to routing key '{topic}': {e}", exc_info=True
+        )
         raise PublishError(f"Failed to execute RPC call: {e}")

@@ -38,9 +38,19 @@ The client makes a synchronous call and waits for the server's response.
    docker run -d --name redis -p 6379:6379 redis:7-alpine
    ```
 
-2. **Install dependencies**
+2. **Install CelerySalt in development mode**
+   
+   Since the package isn't published yet, install it in editable mode:
    ```bash
-   pip install celery celerysalt kombu redis
+   # From the project root (celery-salt/)
+   pip install -e .
+   ```
+   
+   This makes `celery_salt` available for import without publishing to PyPI.
+
+3. **Install other dependencies**
+   ```bash
+   pip install celery kombu redis
    ```
 
 ## Running the Example
@@ -55,8 +65,8 @@ celery -A server worker --loglevel=info
 You should see:
 ```
 [tasks]
-  . celerysalt.dispatch_event
-  . celerysalt.rpc.calculator.add.handle_calculator_add
+  . celery_salt.dispatch_event
+  . celery_salt.rpc.calculator.add.handle_calculator_add
 ```
 
 ### Terminal 2: Run the Client

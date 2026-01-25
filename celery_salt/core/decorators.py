@@ -149,14 +149,15 @@ def response(topic: str, version: str = "v1") -> Callable:
         # Store response schema for this topic
         _rpc_response_schemas[topic] = pydantic_model
 
-        # Add metadata to class
-        cls._celerysalt_topic = topic
-        cls._celerysalt_model = pydantic_model
-        cls._celerysalt_is_response = True
+        # Add metadata to the Pydantic model (not the original class)
+        pydantic_model._celerysalt_topic = topic
+        pydantic_model._celerysalt_model = pydantic_model
+        pydantic_model._celerysalt_is_response = True
 
         logger.debug(f"Registered response schema for RPC topic: {topic}")
 
-        return cls
+        # Return the Pydantic model so it can be instantiated directly
+        return pydantic_model
 
     return decorator
 
@@ -200,14 +201,15 @@ def error(topic: str, version: str = "v1") -> Callable:
         # Store error schema for this topic
         _rpc_error_schemas[topic] = pydantic_model
 
-        # Add metadata to class
-        cls._celerysalt_topic = topic
-        cls._celerysalt_model = pydantic_model
-        cls._celerysalt_is_error = True
+        # Add metadata to the Pydantic model (not the original class)
+        pydantic_model._celerysalt_topic = topic
+        pydantic_model._celerysalt_model = pydantic_model
+        pydantic_model._celerysalt_is_error = True
 
         logger.debug(f"Registered error schema for RPC topic: {topic}")
 
-        return cls
+        # Return the Pydantic model so it can be instantiated directly
+        return pydantic_model
 
     return decorator
 
@@ -470,7 +472,11 @@ def subscribe(
         ValidationModel = _create_model_from_schema(schema)
 
         # 3. Wrap handler with validation
-        def validated_handler(raw_data: dict) -> Any:
+        # Note: bind=True means Celery will pass task instance as first arg
+        def validated_handler(self, raw_data: dict) -> Any:
+            # self is the Celery task instance (because bind=True)
+            # raw_data is the event data
+
             # Extract _tchu_meta if present (for RPC detection and protocol compatibility)
             meta = raw_data.pop("_tchu_meta", {})
             is_rpc = meta.get("is_rpc", False)

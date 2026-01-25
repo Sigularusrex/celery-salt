@@ -82,9 +82,19 @@ If you prefer to run services manually:
    docker run -d --name redis -p 6379:6379 redis:7-alpine
    ```
 
-3. **Install dependencies**
+3. **Install CelerySalt in development mode**
+   
+   Since the package isn't published yet, install it in editable mode:
    ```bash
-   pip install celery celerysalt kombu redis
+   # From the project root (celery-salt/)
+   pip install -e .
+   ```
+   
+   This makes `celery_salt` available for import without publishing to PyPI.
+
+4. **Install other dependencies**
+   ```bash
+   pip install celery kombu redis
    ```
 
 ## Running Examples

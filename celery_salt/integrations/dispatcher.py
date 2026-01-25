@@ -100,15 +100,52 @@ def create_topic_dispatcher(
 
                 try:
                     if is_rpc:
-                        # RPC: Must call directly to return result to caller
-                        result = handler_task(deserialized)
-                        
+                        # RPC: Must call directly (synchronously) to return result to caller
+                        # Cannot use apply_async().get() because we're already in a task
+                        # For bound tasks (bind=True), we need to access the underlying function
+                        # and call it with a mock task instance
+
+                        # RPC: Execute synchronously in the same process
+                        # For bound tasks (bind=True), we need to access the underlying function
+                        # and call it with a mock task instance
+                        import inspect
+
+                        # Get the actual function from the Celery task
+                        # For bound tasks, the function is the task's run method
+                        sig = inspect.signature(handler_task)
+                        params = list(sig.parameters.keys())
+
+                        if params and params[0] == "self":
+                            # Bound task - create minimal task instance
+                            class MockTaskInstance:
+                                def __init__(self, task_id: str):
+                                    self.request = type(
+                                        "obj",
+                                        (object,),
+                                        {
+                                            "id": task_id,
+                                            "retries": 0,
+                                            "is_eager": False,
+                                        },
+                                    )()
+
+                            # Get the underlying function (the validated_handler)
+                            # It's stored in the task's run attribute
+                            func = handler_task.run
+                            mock_task = MockTaskInstance(
+                                f"{message_id}:rpc:{handler_id}"
+                            )
+                            result = func(mock_task, deserialized)
+                        else:
+                            # Not bound, call directly
+                            result = handler_task(deserialized)
+
                         # Result is already validated by the handler wrapper
                         # It may be a Pydantic model (response or error schema)
-                        # Convert to dict for serialization
+                        # Convert to dict for serialization if needed
                         if isinstance(result, BaseModel):
                             result = result.model_dump()
-                        
+
                         results.append(
                             {
                                 "handler": handler_name,
@@ -116,7 +153,9 @@ def create_topic_dispatcher(
                                 "result": result,
                             }
                         )
-                        log_handler_executed(logger, handler_name, routing_key, message_id)
+                        log_handler_executed(
+                            logger, handler_name, routing_key, message_id
+                        )
                     else:
                         # Broadcast: Dispatch as async Celery task
                         handler_task_id = f"{message_id}:{handler_id}"
@@ -141,7 +180,9 @@ def create_topic_dispatcher(
                         )
 
                 except Exception as e:
-                    log_error(logger, f"Handler '{handler_name}' failed", e, routing_key)
+                    log_error(
+                        logger, f"Handler '{handler_name}' failed", e, routing_key
+                    )
                     results.append(
                         {
                             "handler": handler_name,
@@ -159,7 +200,9 @@ def create_topic_dispatcher(
             }
 
         except Exception as e:
-            log_error(logger, f"Failed to dispatch event for '{routing_key}'", e, routing_key)
+            log_error(
+                logger, f"Failed to dispatch event for '{routing_key}'", e, routing_key
+            )
             raise
 
     return dispatch_event
@@ -209,7 +252,9 @@ def get_subscribed_routing_keys(
         should_exclude = False
         for pattern in exclude_patterns:
             # Convert RabbitMQ pattern to fnmatch pattern
-            fnmatch_pattern = pattern.replace(".", r"\.").replace("*", ".*").replace("#", ".*")
+            fnmatch_pattern = (
+                pattern.replace(".", r"\.").replace("*", ".*").replace("#", ".*")
+            )
             if fnmatch.fnmatch(key, fnmatch_pattern):
                 should_exclude = True
                 break
