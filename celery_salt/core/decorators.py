@@ -459,7 +459,7 @@ def subscribe(
         schema = _fetch_schema(topic, version)
 
         # 2. Create Pydantic model from schema
-        ValidationModel = _create_model_from_schema(schema)
+        validation_model = _create_model_from_schema(schema)
 
         # 3. Wrap handler with validation
         # Note: bind=True means Celery will pass task instance as first arg
@@ -473,7 +473,7 @@ def subscribe(
 
             # Validate data
             try:
-                validated = ValidationModel(**raw_data)
+                validated = validation_model(**raw_data)
             except ValidationError as e:
                 logger.error(f"Validation failed for {topic}: {e}")
                 raise
