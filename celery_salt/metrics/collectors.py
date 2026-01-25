@@ -1,10 +1,10 @@
 """Metrics collection for tchu-tchu operations."""
 
-from typing import Dict, Any, Optional, List
-from collections import defaultdict, Counter
-from threading import Lock
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from threading import Lock
+from typing import Any
 
 from celery_salt.logging.handlers import get_logger
 
@@ -18,10 +18,10 @@ class MessageMetric:
     topic: str
     event_type: str  # "published", "received", "rpc_call", "error"
     timestamp: datetime
-    execution_time: Optional[float] = None
-    task_id: Optional[str] = None
-    error_type: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_time: float | None = None
+    task_id: str | None = None
+    error_type: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class MetricsCollector:
@@ -44,7 +44,7 @@ class MetricsCollector:
             max_history_size: Maximum number of metrics to keep in memory
         """
         self.max_history_size = max_history_size
-        self._metrics: List[MessageMetric] = []
+        self._metrics: list[MessageMetric] = []
         self._lock = Lock()
 
         # Aggregated counters
@@ -56,8 +56,8 @@ class MetricsCollector:
     def record_message_published(
         self,
         topic: str,
-        task_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        task_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record a message publication event."""
         metric = MessageMetric(
@@ -72,8 +72,8 @@ class MetricsCollector:
     def record_message_received(
         self,
         topic: str,
-        task_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        task_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record a message reception event."""
         metric = MessageMetric(
@@ -89,8 +89,8 @@ class MetricsCollector:
         self,
         topic: str,
         execution_time: float,
-        task_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        task_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record an RPC call completion event."""
         metric = MessageMetric(
@@ -107,8 +107,8 @@ class MetricsCollector:
         self,
         topic: str,
         error_type: str,
-        task_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        task_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record an error event."""
         metric = MessageMetric(
@@ -145,7 +145,7 @@ class MetricsCollector:
             if len(self._metrics) > self.max_history_size:
                 self._metrics = self._metrics[-self.max_history_size :]
 
-    def get_summary(self, time_window: Optional[timedelta] = None) -> Dict[str, Any]:
+    def get_summary(self, time_window: timedelta | None = None) -> dict[str, Any]:
         """
         Get a summary of metrics.
 
@@ -197,8 +197,8 @@ class MetricsCollector:
             }
 
     def get_topic_stats(
-        self, topic: str, time_window: Optional[timedelta] = None
-    ) -> Dict[str, Any]:
+        self, topic: str, time_window: timedelta | None = None
+    ) -> dict[str, Any]:
         """
         Get statistics for a specific topic.
 
@@ -243,7 +243,7 @@ class MetricsCollector:
                 "time_window": str(time_window) if time_window else "all_time",
             }
 
-    def get_recent_errors(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_recent_errors(self, limit: int = 50) -> list[dict[str, Any]]:
         """
         Get recent error events.
 
@@ -279,7 +279,7 @@ class MetricsCollector:
 
         logger.info("Cleared all metrics")
 
-    def _percentile(self, values: List[float], percentile: int) -> float:
+    def _percentile(self, values: list[float], percentile: int) -> float:
         """Calculate percentile of a list of values."""
         if not values:
             return 0.0

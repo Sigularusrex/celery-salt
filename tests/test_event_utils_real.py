@@ -5,11 +5,11 @@ from pydantic import BaseModel, ValidationError
 
 from celery_salt.core.event_utils import (
     register_event_schema,
-    validate_and_publish,
     validate_and_call_rpc,
+    validate_and_publish,
 )
-from celery_salt.core.registry import set_schema_registry, InMemorySchemaRegistry
 from celery_salt.core.exceptions import SchemaConflictError
+from celery_salt.core.registry import InMemorySchemaRegistry, set_schema_registry
 
 
 class TestRegisterEventSchemaReal:

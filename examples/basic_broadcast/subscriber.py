@@ -16,10 +16,10 @@ from celery import Celery
 from kombu import Exchange, Queue, binding
 from pydantic import BaseModel
 
-from celery_salt import event, subscribe, SaltEvent
+from celery_salt import SaltEvent, event, subscribe
 from celery_salt.core.decorators import (
-    DEFAULT_EXCHANGE_NAME,
     DEFAULT_DISPATCHER_TASK_NAME,
+    DEFAULT_EXCHANGE_NAME,
 )
 from celery_salt.integrations.dispatcher import (
     create_topic_dispatcher,

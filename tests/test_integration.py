@@ -1,15 +1,15 @@
 """Integration tests for CelerySalt.
 
-These tests verify that both APIs work together and that schemas are properly registered.
+These tests verify that both APIs work together and schemas are registered.
 We avoid heavy mocking and focus on real functionality.
 """
 
 from pydantic import BaseModel
 
-from celery_salt import event, subscribe, SaltEvent
+from celery_salt import SaltEvent, event, subscribe
 from celery_salt.core.registry import (
-    set_schema_registry,
     InMemorySchemaRegistry,
+    set_schema_registry,
 )
 
 
@@ -93,7 +93,7 @@ class TestVersioningIntegration:
         assert "phone" in schema_v2.get("properties", {})
 
     def test_backward_compatibility_schema_registration(self):
-        """Test that v1 and v2 schemas are both registered for backward compatibility."""
+        """Test v1 and v2 schemas are both registered for backward compatibility."""
 
         # Register v1 event first (needed for v1 handler)
         @event("test.topic", version="v1")

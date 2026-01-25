@@ -5,17 +5,19 @@ These decorators provide a Pydantic-based API for defining and subscribing to ev
 with import-time schema registration for early error detection.
 """
 
-from typing import Type, Any, Callable
-from pydantic import BaseModel, create_model, ValidationError
+from collections.abc import Callable
+from typing import Any
 
+from pydantic import BaseModel, ValidationError, create_model
+
+from celery_salt.core.event_utils import (
+    ensure_schema_registered,
+    register_event_schema,
+    validate_and_call_rpc,
+    validate_and_publish,
+)
 from celery_salt.core.exceptions import RPCError
 from celery_salt.core.registry import get_schema_registry
-from celery_salt.core.event_utils import (
-    register_event_schema,
-    ensure_schema_registered,
-    validate_and_publish,
-    validate_and_call_rpc,
-)
 from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
@@ -25,8 +27,8 @@ DEFAULT_EXCHANGE_NAME = "tchu_events"
 DEFAULT_DISPATCHER_TASK_NAME = "celery_salt.dispatch_event"
 
 # Global registry for RPC response/error schemas
-_rpc_response_schemas: dict[str, Type[BaseModel]] = {}
-_rpc_error_schemas: dict[str, Type[BaseModel]] = {}
+_rpc_response_schemas: dict[str, type[BaseModel]] = {}
+_rpc_error_schemas: dict[str, type[BaseModel]] = {}
 
 
 def event(
@@ -64,7 +66,7 @@ def event(
         )
     """
 
-    def decorator(cls: Type) -> Type:
+    def decorator(cls: type) -> type:
         # Convert class annotations to Pydantic model
         fields = {}
         for name, annotation in getattr(cls, "__annotations__", {}).items():
@@ -137,7 +139,7 @@ def response(topic: str, version: str = "v1") -> Callable:
             total: int
     """
 
-    def decorator(cls: Type) -> Type:
+    def decorator(cls: type) -> type:
         # Convert class annotations to Pydantic model
         fields = {}
         for name, annotation in getattr(cls, "__annotations__", {}).items():
@@ -189,7 +191,7 @@ def error(topic: str, version: str = "v1") -> Callable:
             details: dict | None = None
     """
 
-    def decorator(cls: Type) -> Type:
+    def decorator(cls: type) -> type:
         # Convert class annotations to Pydantic model
         fields = {}
         for name, annotation in getattr(cls, "__annotations__", {}).items():
@@ -231,8 +233,8 @@ event.error = error
 def _register_schema_at_import(
     topic: str,
     version: str,
-    model: Type[BaseModel],
-    publisher_class: Type,
+    model: type[BaseModel],
+    publisher_class: type,
 ) -> None:
     """
     Register schema immediately at import time.
@@ -256,7 +258,7 @@ def _cache_schema_for_later(
     topic: str,
     version: str,
     schema: dict,
-    publisher_class: Type,
+    publisher_class: type,
 ) -> None:
     """Cache schema locally if registry is unavailable at import time."""
     # This is now handled by register_event_schema in event_utils
@@ -265,7 +267,7 @@ def _cache_schema_for_later(
 
 def _create_publish_method(
     topic: str,
-    model: Type[BaseModel],
+    model: type[BaseModel],
     exchange_name: str,
 ) -> Callable:
     """Create publish method for broadcast events."""
@@ -306,7 +308,7 @@ def _create_publish_method(
 
 def _create_rpc_method(
     topic: str,
-    model: Type[BaseModel],
+    model: type[BaseModel],
     exchange_name: str,
 ) -> Callable:
     """Create call method for RPC events."""
@@ -350,8 +352,8 @@ def _create_rpc_method(
 # Keeping this for backward compatibility but it's deprecated
 def _ensure_schema_registered(
     topic: str,
-    model: Type[BaseModel],
-    publisher_class: Type,
+    model: type[BaseModel],
+    publisher_class: type,
 ) -> None:
     """Ensure schema is registered (safety net if import-time registration failed)."""
     version = getattr(publisher_class, "_celerysalt_version", "v1")
@@ -561,7 +563,7 @@ def _fetch_schema(topic: str, version: str) -> dict:
     return registry.get_schema(topic, version)
 
 
-def _create_model_from_schema(schema: dict) -> Type[BaseModel]:
+def _create_model_from_schema(schema: dict) -> type[BaseModel]:
     """
     Create Pydantic model from JSON Schema.
 
@@ -609,10 +611,11 @@ def _create_model_from_schema(schema: dict) -> Type[BaseModel]:
     )
 
 
-def _json_schema_type_to_python(field_schema: dict) -> Type:
+def _json_schema_type_to_python(field_schema: dict) -> type:
     """Convert JSON Schema type to Python type."""
     from datetime import datetime
     from uuid import UUID
+
     from pydantic import EmailStr
 
     json_type = field_schema.get("type")

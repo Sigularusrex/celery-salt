@@ -1,6 +1,6 @@
 """Django signal handlers for tchu-tchu integration."""
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from celery_salt.logging.handlers import get_logger
 
@@ -17,9 +17,9 @@ except ImportError:
 def create_signal_handler(
     topic: str,
     client: Any,
-    include_fields: Optional[list] = None,
-    exclude_fields: Optional[list] = None,
-    condition: Optional[callable] = None,
+    include_fields: list | None = None,
+    exclude_fields: list | None = None,
+    condition: callable | None = None,
 ):
     """
     Create a signal handler for Django model events.
@@ -73,9 +73,9 @@ def create_signal_handler(
 
 def extract_model_data(
     instance: Any,
-    include_fields: Optional[list] = None,
-    exclude_fields: Optional[list] = None,
-) -> Dict[str, Any]:
+    include_fields: list | None = None,
+    exclude_fields: list | None = None,
+) -> dict[str, Any]:
     """
     Extract data from a Django model instance.
 

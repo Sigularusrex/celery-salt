@@ -1,6 +1,6 @@
 """Django model mixins for tchu-tchu integration."""
 
-from typing import Optional, List, Dict, Any
+from typing import Any
 
 from celery_salt.integrations.client import TchuClient
 from celery_salt.logging.handlers import get_logger
@@ -58,7 +58,7 @@ if DJANGO_AVAILABLE:
                 except Exception:
                     pass
 
-        def _get_changed_fields(self) -> List[str]:
+        def _get_changed_fields(self) -> list[str]:
             """Get list of fields that have changed."""
             changed_fields = []
 
@@ -75,7 +75,7 @@ if DJANGO_AVAILABLE:
 
             return changed_fields
 
-        def _get_topic_config(self) -> Dict[str, Any]:
+        def _get_topic_config(self) -> dict[str, Any]:
             """Get topic configuration from Meta class."""
             meta = getattr(self, "Meta", None)
 
@@ -89,8 +89,8 @@ if DJANGO_AVAILABLE:
             }
 
         def _get_model_data(
-            self, fields_changed: Optional[List[str]] = None
-        ) -> Dict[str, Any]:
+            self, fields_changed: list[str] | None = None
+        ) -> dict[str, Any]:
             """Extract model data for event payload."""
             config = self._get_topic_config()
             include_fields = config["include_fields"]
@@ -136,7 +136,7 @@ if DJANGO_AVAILABLE:
 
             return data
 
-        def publish_event(self, event_type: str, data: Optional[Dict[str, Any]] = None):
+        def publish_event(self, event_type: str, data: dict[str, Any] | None = None):
             """
             Manually publish an event for this model instance.
 

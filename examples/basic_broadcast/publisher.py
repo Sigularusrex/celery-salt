@@ -18,8 +18,8 @@ from pydantic import BaseModel
 
 from celery_salt import SaltEvent, event
 from celery_salt.core.decorators import (
-    DEFAULT_EXCHANGE_NAME,
     DEFAULT_DISPATCHER_TASK_NAME,
+    DEFAULT_EXCHANGE_NAME,
 )
 
 # Configure Celery to route dispatcher tasks to the topic exchange

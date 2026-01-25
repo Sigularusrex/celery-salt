@@ -5,9 +5,9 @@ Provides a centralized schema management system with adapter pattern for
 different backends (in-memory, PostgreSQL, cloud API).
 """
 
-from typing import Dict, Any, Optional
-from threading import Lock
 from collections import defaultdict
+from threading import Lock
+from typing import Any
 
 from celery_salt.core.exceptions import SchemaRegistryUnavailableError
 from celery_salt.logging.handlers import get_logger
@@ -24,7 +24,7 @@ class InMemorySchemaRegistry:
     """
 
     def __init__(self) -> None:
-        self._schemas: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
+        self._schemas: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
         self._lock = Lock()
 
     def register_schema(
@@ -36,8 +36,8 @@ class InMemorySchemaRegistry:
         publisher_class: str,
         mode: str = "broadcast",
         description: str = "",
-        response_schema: Optional[dict] = None,
-        error_schema: Optional[dict] = None,
+        response_schema: dict | None = None,
+        error_schema: dict | None = None,
     ) -> dict:
         """
         Register a schema.
@@ -112,7 +112,7 @@ class InMemorySchemaRegistry:
 
 
 # Global registry instance
-_global_registry: Optional[InMemorySchemaRegistry] = None
+_global_registry: InMemorySchemaRegistry | None = None
 
 
 def get_schema_registry() -> InMemorySchemaRegistry:

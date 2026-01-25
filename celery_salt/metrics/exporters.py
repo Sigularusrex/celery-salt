@@ -1,12 +1,12 @@
 """Metrics exporters for tchu-tchu."""
 
 import json
-from typing import Dict, Any, Optional
-from datetime import timedelta
 from abc import ABC, abstractmethod
+from datetime import timedelta
+from typing import Any
 
-from celery_salt.metrics.collectors import MetricsCollector, get_metrics_collector
 from celery_salt.logging.handlers import get_logger
+from celery_salt.metrics.collectors import MetricsCollector, get_metrics_collector
 
 logger = get_logger(__name__)
 
@@ -15,7 +15,7 @@ class MetricsExporter(ABC):
     """Base class for metrics exporters."""
 
     @abstractmethod
-    def export(self, metrics: Dict[str, Any]) -> None:
+    def export(self, metrics: dict[str, Any]) -> None:
         """Export metrics data."""
         pass
 
@@ -23,7 +23,7 @@ class MetricsExporter(ABC):
 class JSONExporter(MetricsExporter):
     """Export metrics as JSON to a file or stdout."""
 
-    def __init__(self, file_path: Optional[str] = None) -> None:
+    def __init__(self, file_path: str | None = None) -> None:
         """
         Initialize the JSON exporter.
 
@@ -32,7 +32,7 @@ class JSONExporter(MetricsExporter):
         """
         self.file_path = file_path
 
-    def export(self, metrics: Dict[str, Any]) -> None:
+    def export(self, metrics: dict[str, Any]) -> None:
         """Export metrics as JSON."""
         try:
             json_data = json.dumps(metrics, indent=2, default=str)
@@ -51,7 +51,7 @@ class JSONExporter(MetricsExporter):
 class PrometheusExporter(MetricsExporter):
     """Export metrics in Prometheus format."""
 
-    def __init__(self, file_path: Optional[str] = None) -> None:
+    def __init__(self, file_path: str | None = None) -> None:
         """
         Initialize the Prometheus exporter.
 
@@ -60,7 +60,7 @@ class PrometheusExporter(MetricsExporter):
         """
         self.file_path = file_path
 
-    def export(self, metrics: Dict[str, Any]) -> None:
+    def export(self, metrics: dict[str, Any]) -> None:
         """Export metrics in Prometheus format."""
         try:
             prometheus_data = self._convert_to_prometheus(metrics)
@@ -75,7 +75,7 @@ class PrometheusExporter(MetricsExporter):
         except Exception as e:
             logger.error(f"Failed to export Prometheus metrics: {e}", exc_info=True)
 
-    def _convert_to_prometheus(self, metrics: Dict[str, Any]) -> str:
+    def _convert_to_prometheus(self, metrics: dict[str, Any]) -> str:
         """Convert metrics to Prometheus format."""
         lines = []
 
@@ -153,7 +153,7 @@ class LogExporter(MetricsExporter):
         """
         self.log_level = log_level.upper()
 
-    def export(self, metrics: Dict[str, Any]) -> None:
+    def export(self, metrics: dict[str, Any]) -> None:
         """Export metrics to logs."""
         try:
             log_func = getattr(logger, self.log_level.lower(), logger.info)
@@ -172,8 +172,8 @@ class MetricsReporter:
 
     def __init__(
         self,
-        collector: Optional[MetricsCollector] = None,
-        exporters: Optional[list] = None,
+        collector: MetricsCollector | None = None,
+        exporters: list | None = None,
     ) -> None:
         """
         Initialize the metrics reporter.
@@ -186,8 +186,8 @@ class MetricsReporter:
         self.exporters = exporters or [JSONExporter()]
 
     def generate_report(
-        self, time_window: Optional[timedelta] = None, include_errors: bool = True
-    ) -> Dict[str, Any]:
+        self, time_window: timedelta | None = None, include_errors: bool = True
+    ) -> dict[str, Any]:
         """
         Generate a comprehensive metrics report.
 
@@ -206,7 +206,7 @@ class MetricsReporter:
         return report
 
     def export_report(
-        self, time_window: Optional[timedelta] = None, include_errors: bool = True
+        self, time_window: timedelta | None = None, include_errors: bool = True
     ) -> None:
         """
         Generate and export a metrics report using all configured exporters.
@@ -227,8 +227,8 @@ class MetricsReporter:
                 )
 
     def get_topic_report(
-        self, topic: str, time_window: Optional[timedelta] = None
-    ) -> Dict[str, Any]:
+        self, topic: str, time_window: timedelta | None = None
+    ) -> dict[str, Any]:
         """
         Generate a report for a specific topic.
 

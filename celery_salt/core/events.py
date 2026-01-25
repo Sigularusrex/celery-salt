@@ -11,10 +11,10 @@ from typing import Any
 from pydantic import BaseModel
 
 from celery_salt.core.event_utils import (
-    register_event_schema,
     ensure_schema_registered,
-    validate_and_publish,
+    register_event_schema,
     validate_and_call_rpc,
+    validate_and_publish,
 )
 from celery_salt.logging.handlers import get_logger
 

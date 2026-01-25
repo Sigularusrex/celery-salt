@@ -5,14 +5,15 @@ This module provides common functionality to minimize code duplication
 between the decorator-based and class-based event APIs.
 """
 
-from typing import Type, Optional, Any, Dict
+from typing import Any
+
 from pydantic import BaseModel, ValidationError
 
-from celery_salt.core.registry import get_schema_registry
 from celery_salt.core.exceptions import (
     SchemaConflictError,
     SchemaRegistryUnavailableError,
 )
+from celery_salt.core.registry import get_schema_registry
 from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
@@ -21,12 +22,12 @@ logger = get_logger(__name__)
 def register_event_schema(
     topic: str,
     version: str,
-    schema_model: Type[BaseModel],
-    publisher_class: Type,
+    schema_model: type[BaseModel],
+    publisher_class: type,
     mode: str = "broadcast",
     description: str = "",
-    response_schema_model: Optional[Type[BaseModel]] = None,
-    error_schema_model: Optional[Type[BaseModel]] = None,
+    response_schema_model: type[BaseModel] | None = None,
+    error_schema_model: type[BaseModel] | None = None,
     auto_register: bool = True,
 ) -> None:
     """
@@ -118,12 +119,12 @@ def register_event_schema(
 def ensure_schema_registered(
     topic: str,
     version: str,
-    schema_model: Type[BaseModel],
-    publisher_class: Type,
+    schema_model: type[BaseModel],
+    publisher_class: type,
     mode: str = "broadcast",
     description: str = "",
-    response_schema_model: Optional[Type[BaseModel]] = None,
-    error_schema_model: Optional[Type[BaseModel]] = None,
+    response_schema_model: type[BaseModel] | None = None,
+    error_schema_model: type[BaseModel] | None = None,
 ) -> None:
     """
     Ensure schema is registered (safety net if import-time registration failed).
@@ -159,11 +160,11 @@ def ensure_schema_registered(
 
 def validate_and_publish(
     topic: str,
-    data: Dict[str, Any],
-    schema_model: Type[BaseModel],
+    data: dict[str, Any],
+    schema_model: type[BaseModel],
     exchange_name: str = "tchu_events",
-    broker_url: Optional[str] = None,
-    version: Optional[str] = None,
+    broker_url: str | None = None,
+    version: str | None = None,
     **publish_kwargs,
 ) -> str:
     """
@@ -205,13 +206,13 @@ def validate_and_publish(
 
 def validate_and_call_rpc(
     topic: str,
-    data: Dict[str, Any],
-    schema_model: Type[BaseModel],
+    data: dict[str, Any],
+    schema_model: type[BaseModel],
     timeout: int = 30,
     exchange_name: str = "tchu_events",
-    response_schema_model: Optional[Type[BaseModel]] = None,
-    error_schema_model: Optional[Type[BaseModel]] = None,
-    version: Optional[str] = None,
+    response_schema_model: type[BaseModel] | None = None,
+    error_schema_model: type[BaseModel] | None = None,
+    version: str | None = None,
     **call_kwargs,
 ) -> Any:
     """
@@ -263,8 +264,8 @@ def validate_and_call_rpc(
 def _validate_rpc_response_with_models(
     topic: str,
     response: Any,
-    response_schema_model: Optional[Type[BaseModel]] = None,
-    error_schema_model: Optional[Type[BaseModel]] = None,
+    response_schema_model: type[BaseModel] | None = None,
+    error_schema_model: type[BaseModel] | None = None,
 ) -> Any:
     """
     Validate RPC response against response or error schema if provided.
@@ -321,12 +322,12 @@ def _validate_rpc_response_with_models(
 def _cache_schema_for_later(
     topic: str,
     version: str,
-    schema_model: Type[BaseModel],
-    publisher_class: Type,
+    schema_model: type[BaseModel],
+    publisher_class: type,
     mode: str,
     description: str,
-    response_schema_model: Optional[Type[BaseModel]],
-    error_schema_model: Optional[Type[BaseModel]],
+    response_schema_model: type[BaseModel] | None,
+    error_schema_model: type[BaseModel] | None,
 ) -> None:
     """Cache schema locally if registry is unavailable at import time."""
     if not hasattr(_cache_schema_for_later, "pending_schemas"):

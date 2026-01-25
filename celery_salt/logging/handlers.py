@@ -1,12 +1,11 @@
 """Logging handlers and utilities for CelerySalt."""
 
 import logging
-from typing import Optional
 
 from celery_salt.logging.formatters import CelerySaltFormatter
 
 
-def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
+def get_logger(name: str, level: str | None = None) -> logging.Logger:
     """
     Get a configured logger for CelerySalt components.
 
@@ -36,7 +35,7 @@ def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
 
 
 def log_message_published(
-    logger: logging.Logger, topic: str, task_id: Optional[str] = None
+    logger: logging.Logger, topic: str, task_id: str | None = None
 ) -> None:
     """Log a message publication event."""
     logger.info(
@@ -45,7 +44,7 @@ def log_message_published(
 
 
 def log_message_received(
-    logger: logging.Logger, topic: str, task_id: Optional[str] = None
+    logger: logging.Logger, topic: str, task_id: str | None = None
 ) -> None:
     """Log a message reception event."""
     logger.info("Message received", extra={"topic": topic, "task_id": task_id})
@@ -55,7 +54,7 @@ def log_handler_executed(
     logger: logging.Logger,
     handler_name: str,
     topic: str,
-    task_id: Optional[str] = None,
+    task_id: str | None = None,
 ) -> None:
     """Log a handler execution event."""
     logger.info(
@@ -68,7 +67,7 @@ def log_rpc_call(
     logger: logging.Logger,
     topic: str,
     execution_time: float,
-    task_id: Optional[str] = None,
+    task_id: str | None = None,
 ) -> None:
     """Log an RPC call completion."""
     logger.info(
@@ -81,8 +80,8 @@ def log_error(
     logger: logging.Logger,
     message: str,
     error: Exception,
-    topic: Optional[str] = None,
-    task_id: Optional[str] = None,
+    topic: str | None = None,
+    task_id: str | None = None,
 ) -> None:
     """Log an error with context."""
     logger.error(

@@ -8,18 +8,20 @@ Works with or without Celery - falls back to kombu for serverless environments.
 """
 
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
-from celery_salt.utils.json_encoder import dumps_message
+from celery_salt.core.decorators import (
+    DEFAULT_DISPATCHER_TASK_NAME,
+    DEFAULT_EXCHANGE_NAME,
+)
 from celery_salt.core.exceptions import (
     PublishError,
+)
+from celery_salt.core.exceptions import (
     TimeoutError as CelerySaltTimeoutError,
 )
 from celery_salt.logging.handlers import get_logger
-from celery_salt.core.decorators import (
-    DEFAULT_EXCHANGE_NAME,
-    DEFAULT_DISPATCHER_TASK_NAME,
-)
+from celery_salt.utils.json_encoder import dumps_message
 
 logger = get_logger(__name__)
 
@@ -43,13 +45,13 @@ except ImportError:
 
 def publish_event(
     topic: str,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     exchange_name: str = DEFAULT_EXCHANGE_NAME,
     is_rpc: bool = False,
-    celery_app: Optional[Any] = None,
+    celery_app: Any | None = None,
     dispatcher_task_name: str = DEFAULT_DISPATCHER_TASK_NAME,
-    broker_url: Optional[str] = None,
-    version: Optional[str] = None,
+    broker_url: str | None = None,
+    version: str | None = None,
     **publish_kwargs,
 ) -> str:
     """
@@ -85,7 +87,7 @@ def publish_event(
         tchu_meta = {"is_rpc": is_rpc}
         if version:
             tchu_meta["version"] = version
-        
+
         body_with_meta = {
             **data,
             "_tchu_meta": tchu_meta,
@@ -247,13 +249,13 @@ def _publish_via_kombu(
 
 def call_rpc(
     topic: str,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     timeout: int = 30,
     exchange_name: str = DEFAULT_EXCHANGE_NAME,
-    celery_app: Optional[Any] = None,
+    celery_app: Any | None = None,
     dispatcher_task_name: str = DEFAULT_DISPATCHER_TASK_NAME,
     allow_join: bool = False,
-    version: Optional[str] = None,
+    version: str | None = None,
     **call_kwargs,
 ) -> Any:
     """
@@ -301,7 +303,7 @@ def call_rpc(
         tchu_meta = {"is_rpc": True}
         if version:
             tchu_meta["version"] = version
-        
+
         body_with_meta = {
             **data,
             "_tchu_meta": tchu_meta,

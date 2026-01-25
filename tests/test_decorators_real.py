@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from celery_salt.core.decorators import event, subscribe
-from celery_salt.core.registry import set_schema_registry, InMemorySchemaRegistry
+from celery_salt.core.registry import InMemorySchemaRegistry, set_schema_registry
 
 
 class TestEventDecoratorReal:

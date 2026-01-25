@@ -5,7 +5,7 @@ Extends Celery with event publishing/subscribing patterns, schema validation,
 and automatic retries while maintaining the familiar Celery developer experience.
 """
 
-from celery_salt.core import event, subscribe, RPCError
+from celery_salt.core import RPCError, event, subscribe
 from celery_salt.core.events import SaltEvent
 from celery_salt.integrations.dispatcher import (
     create_topic_dispatcher,

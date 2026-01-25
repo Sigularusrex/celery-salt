@@ -2,10 +2,10 @@
 
 
 from celery_salt.core.versioning import (
+    _parse_version,
     compare_versions,
     extract_version_number,
     is_version_compatible,
-    _parse_version,
 )
 
 
@@ -135,7 +135,7 @@ class TestIsVersionCompatible:
         assert is_version_compatible("v1.0", "v1.1") is True
 
     def test_older_message_version_incompatible(self):
-        """Test that handlers cannot process older message versions (forward incompatible)."""
+        """Test handlers cannot process older message versions (forward incompatible)."""
         # v2 handler cannot process v1 messages
         assert is_version_compatible("v2", "v1") is False
         # v1.1 handler cannot process v1.0 messages

@@ -4,10 +4,10 @@ from celery_salt.core.decorators import event, subscribe
 from celery_salt.core.events import SaltEvent
 from celery_salt.core.exceptions import (
     CelerySaltError,
+    PublishError,
+    RPCError,
     SchemaConflictError,
     SchemaRegistryUnavailableError,
-    RPCError,
-    PublishError,
     TimeoutError,
 )
 

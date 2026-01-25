@@ -4,11 +4,11 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from celery_salt.core.events import SaltEvent
-from celery_salt.core.registry import (
-    set_schema_registry,
-    InMemorySchemaRegistry,
-)
 from celery_salt.core.exceptions import SchemaRegistryUnavailableError
+from celery_salt.core.registry import (
+    InMemorySchemaRegistry,
+    set_schema_registry,
+)
 
 
 class TestSaltEventRealFunctionality:

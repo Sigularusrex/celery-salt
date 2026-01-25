@@ -1,6 +1,7 @@
 """Django model decorators for automatic event publishing."""
 
-from typing import List, Optional, Callable, Any, Dict, Type
+from collections.abc import Callable
+from typing import Any
 
 from celery_salt.integrations.client import TchuClient
 from celery_salt.logging.handlers import get_logger
@@ -8,8 +9,8 @@ from celery_salt.logging.handlers import get_logger
 logger = get_logger(__name__)
 
 try:
-    from django.db.models.signals import post_save, post_delete
     from django.db import models
+    from django.db.models.signals import post_delete, post_save
 
     DJANGO_AVAILABLE = True
 except ImportError:
@@ -18,14 +19,14 @@ except ImportError:
 
 
 def auto_publish(
-    topic_prefix: Optional[str] = None,
-    include_fields: Optional[List[str]] = None,
-    exclude_fields: Optional[List[str]] = None,
-    publish_on: Optional[List[str]] = None,
-    client: Optional[TchuClient] = None,
-    condition: Optional[Callable] = None,
-    event_classes: Optional[Dict[str, Type]] = None,
-    context_provider: Optional[Callable] = None,
+    topic_prefix: str | None = None,
+    include_fields: list[str] | None = None,
+    exclude_fields: list[str] | None = None,
+    publish_on: list[str] | None = None,
+    client: TchuClient | None = None,
+    condition: Callable | None = None,
+    event_classes: dict[str, type] | None = None,
+    context_provider: Callable | None = None,
 ):
     """
     Decorator for Django models that automatically publishes events on save/delete.
@@ -123,8 +124,8 @@ def auto_publish(
             event_client = client or TchuClient()
 
         def get_model_data(
-            instance: models.Model, fields_changed: Optional[List[str]] = None
-        ) -> Dict[str, Any]:
+            instance: models.Model, fields_changed: list[str] | None = None
+        ) -> dict[str, Any]:
             """Extract model data for event payload."""
             data = {}
 
@@ -180,7 +181,7 @@ def auto_publish(
         def publish_event(
             instance: models.Model,
             event_type: str,
-            fields_changed: Optional[List[str]] = None,
+            fields_changed: list[str] | None = None,
         ):
             """Publish an event for the model instance."""
             if not should_publish_event(instance, event_type):
@@ -289,7 +290,7 @@ def auto_publish(
     return decorator
 
 
-def get_auto_publish_config(model_class) -> Optional[Dict[str, Any]]:
+def get_auto_publish_config(model_class) -> dict[str, Any] | None:
     """
     Get the auto-publish configuration for a model class.
 

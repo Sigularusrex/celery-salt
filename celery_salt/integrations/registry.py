@@ -6,9 +6,10 @@ are registered for which routing keys.
 """
 
 import re
-from typing import Dict, List, Callable, Any, Optional
 from collections import defaultdict
+from collections.abc import Callable
 from threading import Lock
+from typing import Any
 
 from celery_salt.logging.handlers import get_logger
 
@@ -19,8 +20,8 @@ class HandlerRegistry:
     """Registry for managing routing key-to-handler mappings."""
 
     def __init__(self) -> None:
-        self._handlers: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        self._pattern_handlers: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        self._handlers: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self._pattern_handlers: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self._lock = Lock()
         self._handler_counter = 0
 
@@ -28,9 +29,9 @@ class HandlerRegistry:
         self,
         routing_key: str,
         handler: Callable,
-        name: Optional[str] = None,
-        handler_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        name: str | None = None,
+        handler_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Register a handler for a routing key."""
         with self._lock:
@@ -62,7 +63,7 @@ class HandlerRegistry:
 
             return handler_info["id"]
 
-    def get_handlers(self, routing_key: str) -> List[Dict[str, Any]]:
+    def get_handlers(self, routing_key: str) -> list[dict[str, Any]]:
         """Get all handlers for a specific routing key."""
         with self._lock:
             handlers = []
@@ -77,13 +78,13 @@ class HandlerRegistry:
 
             return handlers
 
-    def get_all_routing_keys(self) -> List[str]:
+    def get_all_routing_keys(self) -> list[str]:
         """Get all registered routing keys and patterns."""
         with self._lock:
             all_keys = list(self._handlers.keys()) + list(self._pattern_handlers.keys())
             return list(set(all_keys))
 
-    def get_handler_count(self, routing_key: Optional[str] = None) -> int:
+    def get_handler_count(self, routing_key: str | None = None) -> int:
         """Get count of handlers."""
         with self._lock:
             if routing_key is None:
@@ -111,7 +112,7 @@ class HandlerRegistry:
 
 
 # Global handler registry instance
-_global_handler_registry: Optional[HandlerRegistry] = None
+_global_handler_registry: HandlerRegistry | None = None
 
 
 def get_handler_registry() -> HandlerRegistry:

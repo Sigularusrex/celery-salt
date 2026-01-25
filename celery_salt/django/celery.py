@@ -1,15 +1,14 @@
 """Celery setup helper for Django + tchu-tchu integration."""
 
 import importlib
-from typing import List, Optional
 
-from kombu import Exchange, Queue, binding
 from celery import Celery as CeleryCelery
-from celery.signals import worker_ready, celeryd_after_setup
+from celery.signals import celeryd_after_setup, worker_ready
+from kombu import Exchange, Queue, binding
 
 from celery_salt.integrations.dispatcher import (
-    get_subscribed_routing_keys,
     create_topic_dispatcher,
+    get_subscribed_routing_keys,
 )
 from celery_salt.logging.handlers import get_logger
 
@@ -19,7 +18,7 @@ logger = get_logger(__name__)
 def setup_celery_queue(
     celery_app,
     queue_name: str,
-    subscriber_modules: List[str],
+    subscriber_modules: list[str],
     exchange_name: str = "tchu_events",
     exchange_type: str = "topic",
     durable: bool = True,
@@ -71,7 +70,7 @@ def setup_celery_queue(
     # Create topic exchange (no database access needed)
     tchu_exchange = Exchange(exchange_name, type=exchange_type, durable=durable)
 
-    def _configure_queue_bindings(routing_keys: List[str]) -> None:
+    def _configure_queue_bindings(routing_keys: list[str]) -> None:
         """Configure queue with the given routing keys."""
         all_bindings = [binding(tchu_exchange, routing_key=key) for key in routing_keys]
 
@@ -218,7 +217,7 @@ class Celery(CeleryCelery):
     def message_broker(
         self,
         queue_name: str,
-        include: Optional[List[str]] = None,
+        include: list[str] | None = None,
         exchange_name: str = "tchu_events",
         exchange_type: str = "topic",
         durable: bool = True,

@@ -9,7 +9,7 @@ Why not use floats?
 Floats don't work for version comparison because:
 
 1. **Can't represent 3+ part versions**: "v1.0.1" can't be a float
-2. **Semantic versioning breaks**: "v1.10" as float becomes 1.1, which is < 1.2, 
+2. **Semantic versioning breaks**: "v1.10" as float becomes 1.1, which is < 1.2,
    but semantically 1.10 > 1.2 (because 10 > 2)
 3. **Precision issues**: Float comparison can have precision problems
 
@@ -21,7 +21,6 @@ Instead, we parse versions into integer parts and compare element-by-element:
 This is the standard approach used by pip, npm, and other package managers.
 """
 
-from typing import Optional
 
 
 def compare_versions(v1: str, v2: str) -> int:
@@ -64,7 +63,7 @@ def compare_versions(v1: str, v2: str) -> int:
     return 0
 
 
-def extract_version_number(version_str: Optional[str]) -> int:
+def extract_version_number(version_str: str | None) -> int:
     """
     Extract numeric version from string like 'v1', 'v2', etc.
 
@@ -116,10 +115,10 @@ def _parse_version(version_str: str) -> list[int]:
 
     # Remove 'v' prefix if present and strip whitespace
     version_str = version_str.strip().lstrip("vV")
-    
+
     # Split by dots
     parts = version_str.split(".")
-    
+
     # Convert to integers
     version_parts = []
     for part in parts:
@@ -131,12 +130,12 @@ def _parse_version(version_str: str) -> list[int]:
         except ValueError:
             # Invalid version part, return empty list
             return []
-    
+
     return version_parts
 
 
 def is_version_compatible(
-    handler_version: Optional[str], message_version: Optional[str]
+    handler_version: str | None, message_version: str | None
 ) -> bool:
     """
     Check if a handler version is compatible with a message version.

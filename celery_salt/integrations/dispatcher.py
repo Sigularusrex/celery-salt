@@ -6,22 +6,23 @@ Maintains protocol compatibility with tchu-tchu.
 """
 
 import json
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel
 
-from celery_salt.integrations.registry import get_handler_registry
-from celery_salt.utils.json_encoder import loads_message
+from celery_salt.core.decorators import DEFAULT_DISPATCHER_TASK_NAME
 from celery_salt.core.versioning import (
-    is_version_compatible,
     compare_versions,
+    is_version_compatible,
 )
+from celery_salt.integrations.registry import get_handler_registry
 from celery_salt.logging.handlers import (
     get_logger,
-    log_message_received,
-    log_handler_executed,
     log_error,
+    log_handler_executed,
+    log_message_received,
 )
-from celery_salt.core.decorators import DEFAULT_DISPATCHER_TASK_NAME
+from celery_salt.utils.json_encoder import loads_message
 
 logger = get_logger(__name__)
 
@@ -45,7 +46,7 @@ def create_topic_dispatcher(
     registry = get_handler_registry()
 
     @celery_app.task(name=task_name, bind=True)
-    def dispatch_event(self, message_body: str, routing_key: Optional[str] = None):
+    def dispatch_event(self, message_body: str, routing_key: str | None = None):
         """
         Dispatcher task that routes messages to local handlers.
 
@@ -259,8 +260,8 @@ def create_topic_dispatcher(
 
 
 def get_subscribed_routing_keys(
-    exclude_patterns: Optional[list[str]] = None,
-    celery_app: Optional[Any] = None,
+    exclude_patterns: list[str] | None = None,
+    celery_app: Any | None = None,
     force_import: bool = True,
 ) -> list[str]:
     """

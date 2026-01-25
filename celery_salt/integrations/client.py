@@ -5,9 +5,9 @@ This is a thin wrapper around the new producer API to maintain compatibility
 with existing Django decorators and mixins.
 """
 
-from typing import Any, Dict, Union, Optional
+from typing import Any
 
-from celery_salt.integrations.producer import publish_event, call_rpc
+from celery_salt.integrations.producer import call_rpc, publish_event
 from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
@@ -21,7 +21,7 @@ class TchuClient:
     Django decorators and mixins that still use the old TchuClient interface.
     """
 
-    def __init__(self, celery_app: Optional[Any] = None) -> None:
+    def __init__(self, celery_app: Any | None = None) -> None:
         """
         Initialize the compatibility client.
 
@@ -30,7 +30,7 @@ class TchuClient:
         """
         self.celery_app = celery_app
 
-    def publish(self, topic: str, data: Union[Dict[str, Any], Any], **kwargs) -> None:
+    def publish(self, topic: str, data: dict[str, Any] | Any, **kwargs) -> None:
         """
         Publish a message to a topic (fire-and-forget).
 
@@ -48,7 +48,7 @@ class TchuClient:
     def call(
         self,
         topic: str,
-        data: Union[Dict[str, Any], Any],
+        data: dict[str, Any] | Any,
         timeout: int = 30,
         allow_join: bool = False,
         **kwargs,

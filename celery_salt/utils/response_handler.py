@@ -1,7 +1,8 @@
 """Response handling utilities for tchu-tchu."""
 
-from typing import Any, Dict, Union
-from celery.result import GroupResult, AsyncResult, EagerResult
+from typing import Any
+
+from celery.result import AsyncResult, EagerResult, GroupResult
 
 from celery_salt.logging.handlers import get_logger
 
@@ -9,8 +10,8 @@ logger = get_logger(__name__)
 
 
 def serialize_celery_result(
-    result: Union[GroupResult, AsyncResult, EagerResult, Any],
-) -> Union[Dict[str, Any], Any]:
+    result: GroupResult | AsyncResult | EagerResult | Any,
+) -> dict[str, Any] | Any:
     """
     Serialize Celery result objects to a JSON-compatible dictionary.
 
@@ -30,7 +31,7 @@ def serialize_celery_result(
                 return serialize_celery_result(result[0])
             return None
 
-        elif isinstance(result, (AsyncResult, EagerResult)):
+        elif isinstance(result, AsyncResult | EagerResult):
             return {
                 "id": result.id
                 if isinstance(result, AsyncResult)

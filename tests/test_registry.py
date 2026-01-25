@@ -2,12 +2,12 @@
 
 import pytest
 
+from celery_salt.core.exceptions import SchemaRegistryUnavailableError
 from celery_salt.core.registry import (
     InMemorySchemaRegistry,
     get_schema_registry,
     set_schema_registry,
 )
-from celery_salt.core.exceptions import SchemaRegistryUnavailableError
 
 
 class TestInMemorySchemaRegistry:
