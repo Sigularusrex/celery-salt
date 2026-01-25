@@ -7,8 +7,7 @@ from celery_salt.logging.handlers import get_logger
 logger = get_logger(__name__)
 
 try:
-    from django.db.models.signals import post_save, post_delete
-    from django.db import models
+    import django.db.models  # noqa: F401
 
     DJANGO_AVAILABLE = True
 except ImportError:

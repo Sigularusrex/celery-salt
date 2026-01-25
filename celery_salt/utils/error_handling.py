@@ -1,12 +1,9 @@
 """Error handling utilities for CelerySalt (backward compatibility)."""
 
-from typing import Optional
 
 # Re-export from core exceptions for backward compatibility
 from celery_salt.core.exceptions import (
     CelerySaltError,
-    PublishError,
-    TimeoutError,
     RPCError,
 )
 

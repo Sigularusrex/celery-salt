@@ -1,6 +1,5 @@
 """Metrics collection for tchu-tchu operations."""
 
-import time
 from typing import Dict, Any, Optional, List
 from collections import defaultdict, Counter
 from threading import Lock

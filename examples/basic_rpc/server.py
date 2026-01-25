@@ -14,7 +14,14 @@ Run:
 """
 
 from celery import Celery
-from celery_salt import event, subscribe, RPCError
+from kombu import Exchange, Queue, binding
+from pydantic import BaseModel
+
+from celery_salt import RPCError, SaltEvent, event, subscribe
+from celery_salt.core.decorators import (
+    DEFAULT_EXCHANGE_NAME,
+    DEFAULT_DISPATCHER_TASK_NAME,
+)
 from celery_salt.integrations.dispatcher import (
     create_topic_dispatcher,
     get_subscribed_routing_keys,
@@ -51,10 +58,6 @@ class CalculatorAddError:
 
 
 # Option 2: Class-based API (for custom logic)
-from celery_salt import SaltEvent
-from pydantic import BaseModel
-
-
 class CalculatorAddRequestV2(SaltEvent):
     """RPC request to add two numbers (class-based version, v2)."""
 
@@ -156,12 +159,6 @@ def handle_calculator_add_v2(data) -> dict:
 
 
 # Configure queue routing AFTER handlers are registered
-from celery_salt.core.decorators import (
-    DEFAULT_EXCHANGE_NAME,
-    DEFAULT_DISPATCHER_TASK_NAME,
-)
-from kombu import Exchange, Queue, binding
-
 # Create topic exchange
 tchu_exchange = Exchange(DEFAULT_EXCHANGE_NAME, type="topic", durable=True)
 

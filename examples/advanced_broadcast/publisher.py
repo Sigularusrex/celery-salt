@@ -20,12 +20,14 @@ Run:
 """
 
 from celery import Celery
+from kombu import Exchange
+from pydantic import BaseModel
+
 from celery_salt import SaltEvent
 from celery_salt.core.decorators import (
     DEFAULT_EXCHANGE_NAME,
     DEFAULT_DISPATCHER_TASK_NAME,
 )
-from pydantic import BaseModel
 
 # Configure Celery to route dispatcher tasks to the topic exchange
 app = Celery("advanced_publisher")
@@ -37,7 +39,6 @@ app.conf.timezone = "UTC"
 app.conf.enable_utc = True
 
 # Configure routing: route dispatcher task to topic exchange
-from kombu import Exchange
 
 # Declare the topic exchange
 topic_exchange = Exchange(DEFAULT_EXCHANGE_NAME, type="topic", durable=True)

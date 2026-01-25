@@ -13,8 +13,10 @@ Run:
 """
 
 from celery import Celery
-from celery_salt import event
-from celery_salt.integrations.producer import publish_event
+from kombu import Exchange
+from pydantic import BaseModel
+
+from celery_salt import SaltEvent, event
 from celery_salt.core.decorators import (
     DEFAULT_EXCHANGE_NAME,
     DEFAULT_DISPATCHER_TASK_NAME,
@@ -32,7 +34,6 @@ app.conf.enable_utc = True
 # Configure routing: route dispatcher task to topic exchange
 # When we call send_task() with routing_key, Celery will use this exchange
 # Note: The routing_key from send_task() call will be used for routing
-from kombu import Exchange
 
 # Declare the topic exchange
 topic_exchange = Exchange(DEFAULT_EXCHANGE_NAME, type="topic", durable=True)
@@ -62,10 +63,6 @@ class UserSignupCompleted:
 
 
 # Option 2: Class-based API (for custom logic)
-from celery_salt import SaltEvent
-from pydantic import BaseModel
-
-
 class UserSignupCompletedV2(SaltEvent):
     """Event published when a user completes signup (class-based version)."""
 

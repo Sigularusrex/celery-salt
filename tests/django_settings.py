@@ -15,7 +15,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "rest_framework",
-    "tchu_tchu.django",
+    "celery_salt.django",
 ]
 
 CELERY_TASK_ALWAYS_EAGER = True

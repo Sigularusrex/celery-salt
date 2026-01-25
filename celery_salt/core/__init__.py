@@ -13,7 +13,6 @@ from celery_salt.core.exceptions import (
 
 # Expose response and error decorators via event function
 # Usage: @event.response("rpc.topic") or @event.error("rpc.topic")
-from celery_salt.core.decorators import response, error
 
 __all__ = [
     "event",

@@ -107,6 +107,9 @@ def register_event_schema(
             response_schema_model,
             error_schema_model,
         )
+    except SchemaConflictError:
+        # Re-raise schema conflicts - these are programming errors that should fail fast
+        raise
     except Exception as e:
         logger.error(f"Failed to register schema {topic}: {e}", exc_info=True)
         # Don't raise - allow graceful degradation

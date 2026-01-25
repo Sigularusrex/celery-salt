@@ -14,9 +14,9 @@ Run:
 """
 
 from celery import Celery
-from celery_salt import event, RPCError
+from pydantic import BaseModel
 
-# Configure Celery (required for RPC calls)
+from celery_salt import RPCError, SaltEvent, event
 from celery_salt.core.decorators import (
     DEFAULT_EXCHANGE_NAME,
     DEFAULT_DISPATCHER_TASK_NAME,
@@ -74,10 +74,6 @@ class CalculatorAddError:
 
 
 # Option 2: Class-based API (for custom logic)
-from celery_salt import SaltEvent
-from pydantic import BaseModel
-
-
 class CalculatorAddRequestV2(SaltEvent):
     """RPC request to add two numbers (class-based version, v2)."""
 

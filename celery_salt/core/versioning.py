@@ -114,12 +114,12 @@ def _parse_version(version_str: str) -> list[int]:
     if not version_str:
         return []
 
-    # Remove 'v' prefix if present
-    version_str = version_str.lstrip("vV")
-
+    # Remove 'v' prefix if present and strip whitespace
+    version_str = version_str.strip().lstrip("vV")
+    
     # Split by dots
     parts = version_str.split(".")
-
+    
     # Convert to integers
     version_parts = []
     for part in parts:
@@ -131,7 +131,7 @@ def _parse_version(version_str: str) -> list[int]:
         except ValueError:
             # Invalid version part, return empty list
             return []
-
+    
     return version_parts
 
 

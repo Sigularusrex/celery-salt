@@ -18,12 +18,18 @@ Run:
 """
 
 from celery import Celery
+from kombu import Exchange, Queue, binding
+from pydantic import BaseModel
+
 from celery_salt import subscribe, SaltEvent
+from celery_salt.core.decorators import (
+    DEFAULT_EXCHANGE_NAME,
+    DEFAULT_DISPATCHER_TASK_NAME,
+)
 from celery_salt.integrations.dispatcher import (
     create_topic_dispatcher,
     get_subscribed_routing_keys,
 )
-from pydantic import BaseModel
 
 
 # Define v1 Event Schema (for v1 handlers)
@@ -95,8 +101,8 @@ def send_welcome_email_v1(data):
     print(
         f"📧 [V1 HANDLER] Sending welcome email to {data.email} (user_id={data.user_id})"
     )
-    print(f"   ⚠️  This is a v1 handler receiving a v2 event (backward compatible)")
-    print(f"   ℹ️  phone_number field is not available in v1 schema")
+    print("   ⚠️  This is a v1 handler receiving a v2 event (backward compatible)")
+    print("   ℹ️  phone_number field is not available in v1 schema")
     # In a real app, you'd send an email here
     return f"Welcome email sent to {data.email} (v1 handler)"
 
@@ -114,8 +120,8 @@ def update_user_analytics_v1(data):
         data: Pydantic model with v1 fields (user_id, email, company_id)
     """
     print(f"📊 [V1 HANDLER] Updating analytics for user {data.user_id}")
-    print(f"   ⚠️  This is a v1 handler receiving a v2 event (backward compatible)")
-    print(f"   ℹ️  phone_number field is not available in v1 schema")
+    print("   ⚠️  This is a v1 handler receiving a v2 event (backward compatible)")
+    print("   ℹ️  phone_number field is not available in v1 schema")
     # In a real app, you'd update analytics here
     return f"Analytics updated for user {data.user_id} (v1 handler)"
 
@@ -141,7 +147,7 @@ def send_welcome_email_v2(data):
         f"📧 [V2 HANDLER] Sending welcome email to {data.email} (user_id={data.user_id})"
     )
     print(f"📱 [V2 HANDLER] Sending SMS to {data.phone_number}")
-    print(f"   ✅ This is a v2 handler receiving a v2 event (normal operation)")
+    print("   ✅ This is a v2 handler receiving a v2 event (normal operation)")
     # In a real app, you'd send email and SMS here
     return f"Welcome email and SMS sent to {data.email} (v2 handler)"
 
@@ -160,7 +166,7 @@ def update_user_analytics_v2(data):
     """
     print(f"📊 [V2 HANDLER] Updating analytics for user {data.user_id}")
     print(f"   📱 Phone number: {data.phone_number}")
-    print(f"   ✅ This is a v2 handler receiving a v2 event (normal operation)")
+    print("   ✅ This is a v2 handler receiving a v2 event (normal operation)")
     # In a real app, you'd update analytics with phone number here
     return f"Analytics updated for user {data.user_id} with phone {data.phone_number} (v2 handler)"
 
@@ -180,19 +186,13 @@ def verify_phone_number_v2(data):
     print(
         f"📱 [V2 HANDLER] Verifying phone number {data.phone_number} for user {data.user_id}"
     )
-    print(f"   ✅ This is a v2 handler receiving a v2 event (normal operation)")
-    print(f"   ✅ phone_number field is available in v2 schema")
+    print("   ✅ This is a v2 handler receiving a v2 event (normal operation)")
+    print("   ✅ phone_number field is available in v2 schema")
     # In a real app, you'd verify the phone number here
     return f"Phone verification initiated for {data.phone_number} (v2 handler)"
 
 
 # Configure queue routing AFTER handlers are registered
-from celery_salt.core.decorators import (
-    DEFAULT_EXCHANGE_NAME,
-    DEFAULT_DISPATCHER_TASK_NAME,
-)
-from kombu import Exchange, Queue, binding
-
 # Create topic exchange
 tchu_exchange = Exchange(DEFAULT_EXCHANGE_NAME, type="topic", durable=True)
 

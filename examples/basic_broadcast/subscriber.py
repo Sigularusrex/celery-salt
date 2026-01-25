@@ -13,12 +13,18 @@ Run:
 """
 
 from celery import Celery
+from kombu import Exchange, Queue, binding
+from pydantic import BaseModel
+
 from celery_salt import event, subscribe, SaltEvent
+from celery_salt.core.decorators import (
+    DEFAULT_EXCHANGE_NAME,
+    DEFAULT_DISPATCHER_TASK_NAME,
+)
 from celery_salt.integrations.dispatcher import (
     create_topic_dispatcher,
     get_subscribed_routing_keys,
 )
-from pydantic import BaseModel
 
 
 # Option 1: Decorator-based API
@@ -139,12 +145,6 @@ def notify_admin_v2(data):
 
 
 # Configure queue routing AFTER handlers are registered
-from celery_salt.core.decorators import (
-    DEFAULT_EXCHANGE_NAME,
-    DEFAULT_DISPATCHER_TASK_NAME,
-)
-from kombu import Exchange, Queue, binding
-
 # Create topic exchange
 tchu_exchange = Exchange(DEFAULT_EXCHANGE_NAME, type="topic", durable=True)
 
