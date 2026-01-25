@@ -26,21 +26,22 @@ Add release notes for the new version.
 ### 3. Test Build Locally
 
 ```bash
-# Clean previous builds
+# Use publish.sh script (builds and checks package)
+./publish.sh
+# Answer 'n' to both prompts if you just want to build
+
+# Or manually:
 rm -rf dist/ build/ *.egg-info
-
-# Build package
 python -m build
-
-# Verify build
 ls -lh dist/
 ```
 
 ### 4. Test on TestPyPI (Recommended)
 
 ```bash
-# Upload to TestPyPI
-python -m twine upload --repository testpypi dist/*
+# Use publish.sh script - it will prompt for TestPyPI
+./publish.sh
+# Answer 'y' to "Publish to TestPyPI first?"
 
 # Test installation
 pip install --index-url https://test.pypi.org/simple/ celery-salt
@@ -49,8 +50,9 @@ pip install --index-url https://test.pypi.org/simple/ celery-salt
 ### 5. Publish to PyPI
 
 ```bash
-# Upload to PyPI
-python -m twine upload dist/*
+# Use publish.sh script - it will prompt for PyPI
+./publish.sh
+# Answer 'y' to "Publish to PyPI?"
 
 # Verify installation
 pip install celery-salt
