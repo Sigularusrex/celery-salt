@@ -1,0 +1,78 @@
+[tool.poetry]
+name = "celery-salt"
+version = "1.0.0"
+description = "Event-driven architecture library for Python that extends Celery with event publishing/subscribing patterns"
+authors = ["David Sigley <djsigley@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/sigularusrex/celery-salt"
+repository = "https://github.com/sigularusrex/celery-salt"
+documentation = "https://github.com/sigularusrex/celery-salt"
+keywords = ["celery", "messaging", "pydantic", "django", "events", "pubsub", "broadcast", "microservices", "event-driven", "schema-registry"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: Django :: 4.0",
+    "Framework :: Celery",
+]
+packages = [
+    { include = "celerysalt" }
+]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+celery = "^5.3.0"
+kombu = "^5.3.0"
+pydantic = "^2.0.0"
+protobuf = {version = "^4.0.0", optional = true}
+django = {version = "^4.0.0", optional = true}
+
+[tool.poetry.extras]
+protobuf = ["protobuf"]
+django = ["django"]
+all = ["protobuf", "django"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+pytest-mock = "^3.10.0"
+pytest-cov = "^4.0.0"
+pytest-django = "^4.5.0"
+black = "^23.0.0"
+isort = "^5.12.0"
+flake8 = "^6.0.0"
+mypy = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi-line-output = 3
+line-length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+DJANGO_SETTINGS_MODULE = "tests.django_settings"
