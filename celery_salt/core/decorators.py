@@ -107,13 +107,9 @@ def event(
 
         # Add publish method for broadcast events
         if mode == "broadcast":
-            cls.publish = classmethod(
-                _create_publish_method(topic, pydantic_model, exchange_name)
-            )
+            cls.publish = _create_publish_method(topic, pydantic_model, exchange_name)
         elif mode == "rpc":
-            cls.call = classmethod(
-                _create_rpc_method(topic, pydantic_model, exchange_name)
-            )
+            cls.call = _create_rpc_method(topic, pydantic_model, exchange_name)
 
         return cls
 
