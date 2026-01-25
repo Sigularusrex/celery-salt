@@ -8,12 +8,14 @@ with import-time schema registration for early error detection.
 from typing import Type, Any, Callable
 from pydantic import BaseModel, create_model, ValidationError
 
-from celery_salt.core.exceptions import (
-    SchemaConflictError,
-    SchemaRegistryUnavailableError,
-    RPCError,
-)
+from celery_salt.core.exceptions import RPCError
 from celery_salt.core.registry import get_schema_registry
+from celery_salt.core.event_utils import (
+    register_event_schema,
+    ensure_schema_registered,
+    validate_and_publish,
+    validate_and_call_rpc,
+)
 from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
@@ -82,11 +84,16 @@ def event(
         )
 
         # Register schema IMMEDIATELY (import time!)
-        _register_schema_at_import(
+        register_event_schema(
             topic=topic,
             version=version,
-            model=pydantic_model,
+            schema_model=pydantic_model,
             publisher_class=cls,
+            mode=mode,
+            description="",
+            response_schema_model=None,
+            error_schema_model=None,
+            auto_register=True,
         )
 
         # Add metadata to class
@@ -219,6 +226,8 @@ event.response = response
 event.error = error
 
 
+# _register_schema_at_import is now replaced by register_event_schema from event_utils
+# Keeping these for backward compatibility but they're deprecated
 def _register_schema_at_import(
     topic: str,
     version: str,
@@ -228,54 +237,19 @@ def _register_schema_at_import(
     """
     Register schema immediately at import time.
 
-    Benefits:
-    - Schemas available before first publish
-    - Early detection of schema conflicts
-    - Complete event catalog visible
-    - Can validate in CI/CD before deployment
+    DEPRECATED: Use register_event_schema from event_utils instead.
     """
-    try:
-        registry = get_schema_registry()
-
-        # Extract JSON schema from Pydantic model
-        json_schema = model.model_json_schema()
-
-        # Attempt to register
-        result = registry.register_schema(
-            topic=topic,
-            version=version,
-            schema=json_schema,
-            publisher_module=publisher_class.__module__,
-            publisher_class=publisher_class.__name__,
-        )
-
-        if result.get("created"):
-            logger.info(f"✓ Registered schema: {topic} (v{version})")
-        else:
-            # Schema already exists - validate it matches
-            existing_schema = result.get("existing_schema")
-            if existing_schema != json_schema:
-                logger.error(
-                    f"✗ Schema conflict for {topic} (v{version})\n"
-                    f"  Existing schema differs from new definition!"
-                )
-                raise SchemaConflictError(topic, version)
-            else:
-                logger.debug(f"Schema already registered: {topic} (v{version})")
-
-    except SchemaRegistryUnavailableError as e:
-        # Registry unavailable (network issue, DB down, etc.)
-        # Cache schema locally for later registration
-        logger.warning(
-            f"⚠ Could not register schema {topic} at import time: {e}\n"
-            f"  Schema cached for registration on first publish."
-        )
-        _cache_schema_for_later(
-            topic, version, model.model_json_schema(), publisher_class
-        )
-    except Exception as e:
-        logger.error(f"Failed to register schema {topic}: {e}", exc_info=True)
-        # Don't raise - allow graceful degradation
+    register_event_schema(
+        topic=topic,
+        version=version,
+        schema_model=model,
+        publisher_class=publisher_class,
+        mode="broadcast",
+        description="",
+        response_schema_model=None,
+        error_schema_model=None,
+        auto_register=True,
+    )
 
 
 def _cache_schema_for_later(
@@ -285,18 +259,8 @@ def _cache_schema_for_later(
     publisher_class: Type,
 ) -> None:
     """Cache schema locally if registry is unavailable at import time."""
-    if not hasattr(_cache_schema_for_later, "pending_schemas"):
-        _cache_schema_for_later.pending_schemas = []
-
-    _cache_schema_for_later.pending_schemas.append(
-        {
-            "topic": topic,
-            "version": version,
-            "schema": schema,
-            "publisher_module": publisher_class.__module__,
-            "publisher_class": publisher_class.__name__,
-        }
-    )
+    # This is now handled by register_event_schema in event_utils
+    pass
 
 
 def _create_publish_method(
@@ -312,17 +276,29 @@ def _create_publish_method(
         validated = model(**kwargs)
 
         # 2. Ensure schema registered (safety net if import-time registration failed)
-        _ensure_schema_registered(topic, model, cls)
+        version = getattr(cls, "_celerysalt_version", "v1")
+        mode = getattr(cls, "_celerysalt_mode", "broadcast")
+        ensure_schema_registered(
+            topic=topic,
+            version=version,
+            schema_model=model,
+            publisher_class=cls,
+            mode=mode,
+            description="",
+            response_schema_model=None,
+            error_schema_model=None,
+        )
 
-        # 3. Publish to broker
-        from celery_salt.integrations.producer import publish_event
-
-        return publish_event(
+        # 3. Use shared utility for publishing
+        # Get version from class metadata
+        version = getattr(cls, "_celerysalt_version", "v1")
+        return validate_and_publish(
             topic=topic,
             data=validated.model_dump(),
+            schema_model=model,
             exchange_name=exchange_name,
-            is_rpc=False,
             broker_url=broker_url,
+            version=version,
         )
 
     return publish
@@ -341,43 +317,55 @@ def _create_rpc_method(
         validated = model(**kwargs)
 
         # 2. Register schema if needed
-        _ensure_schema_registered(topic, model, cls)
-
-        # 3. Make RPC call
-        from celery_salt.integrations.producer import call_rpc
-
-        response = call_rpc(
+        version = getattr(cls, "_celerysalt_version", "v1")
+        ensure_schema_registered(
             topic=topic,
-            data=validated.model_dump(),
-            timeout=timeout,
-            exchange_name=exchange_name,
+            version=version,
+            schema_model=model,
+            publisher_class=cls,
+            mode="rpc",
+            description="",
+            response_schema_model=_rpc_response_schemas.get(topic),
+            error_schema_model=_rpc_error_schemas.get(topic),
         )
 
-        # 4. Validate response (checks for error vs success response schemas)
-        return _validate_rpc_response(topic, response)
+        # 3. Use shared utility for RPC call and response validation
+        # Get version from class metadata
+        version = getattr(cls, "_celerysalt_version", "v1")
+        return validate_and_call_rpc(
+            topic=topic,
+            data=validated.model_dump(),
+            schema_model=model,
+            timeout=timeout,
+            exchange_name=exchange_name,
+            response_schema_model=_rpc_response_schemas.get(topic),
+            error_schema_model=_rpc_error_schemas.get(topic),
+            version=version,
+        )
 
     return call
 
 
+# _ensure_schema_registered is now replaced by ensure_schema_registered from event_utils
+# Keeping this for backward compatibility but it's deprecated
 def _ensure_schema_registered(
     topic: str,
     model: Type[BaseModel],
     publisher_class: Type,
 ) -> None:
     """Ensure schema is registered (safety net if import-time registration failed)."""
-    try:
-        registry = get_schema_registry()
-        json_schema = model.model_json_schema()
-
-        registry.register_schema(
-            topic=topic,
-            version=getattr(publisher_class, "_celerysalt_version", "v1"),
-            schema=json_schema,
-            publisher_module=publisher_class.__module__,
-            publisher_class=publisher_class.__name__,
-        )
-    except Exception as e:
-        logger.warning(f"Failed to ensure schema registration for {topic}: {e}")
+    version = getattr(publisher_class, "_celerysalt_version", "v1")
+    mode = getattr(publisher_class, "_celerysalt_mode", "broadcast")
+    ensure_schema_registered(
+        topic=topic,
+        version=version,
+        schema_model=model,
+        publisher_class=publisher_class,
+        mode=mode,
+        description="",
+        response_schema_model=None,
+        error_schema_model=None,
+    )
 
 
 def _validate_rpc_response(topic: str, response: Any) -> Any:
@@ -547,7 +535,9 @@ def subscribe(
         from celery_salt.integrations.registry import get_handler_registry
 
         registry = get_handler_registry()
-        registry.register_handler(topic, task)
+        # Store version in metadata for version filtering
+        metadata = {"version": version}
+        registry.register_handler(topic, task, metadata=metadata)
 
         # 6. Track subscriber in database (if schema registry supports it)
         try:

@@ -34,9 +34,24 @@ class InMemorySchemaRegistry:
         schema: dict,
         publisher_module: str,
         publisher_class: str,
+        mode: str = "broadcast",
+        description: str = "",
+        response_schema: Optional[dict] = None,
+        error_schema: Optional[dict] = None,
     ) -> dict:
         """
         Register a schema.
+
+        Args:
+            topic: Event topic
+            version: Schema version
+            schema: JSON schema dict
+            publisher_module: Module where event class is defined
+            publisher_class: Name of event class
+            mode: "broadcast" or "rpc" (default: "broadcast")
+            description: Human-readable description
+            response_schema: Optional JSON schema for RPC response
+            error_schema: Optional JSON schema for RPC error
 
         Returns:
             dict with 'created' (bool) and optionally 'existing_schema'
@@ -57,6 +72,10 @@ class InMemorySchemaRegistry:
                 "schema": schema,
                 "publisher_module": publisher_module,
                 "publisher_class": publisher_class,
+                "mode": mode,
+                "description": description,
+                "response_schema": response_schema,
+                "error_schema": error_schema,
             }
 
             return {"created": True}

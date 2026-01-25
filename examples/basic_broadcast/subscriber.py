@@ -13,13 +13,15 @@ Run:
 """
 
 from celery import Celery
-from celery_salt import event, subscribe
+from celery_salt import event, subscribe, SaltEvent
 from celery_salt.integrations.dispatcher import (
     create_topic_dispatcher,
     get_subscribed_routing_keys,
 )
+from pydantic import BaseModel
 
 
+# Option 1: Decorator-based API
 # Define the event schema (must match publisher)
 @event("user.signup.completed")
 class UserSignupCompleted:
@@ -29,6 +31,25 @@ class UserSignupCompleted:
     email: str
     company_id: int
     signup_source: str = "web"
+
+
+# Option 2: Class-based API
+# Note: For subscribers, we don't need to define the event class
+# The @subscribe decorator fetches the schema from the registry automatically
+# But we can define it for type hints if we want
+class UserSignupCompletedV2(SaltEvent):
+    """Event published when a user completes signup (class-based version)."""
+
+    class Schema(BaseModel):
+        user_id: int
+        email: str
+        company_id: int
+        signup_source: str = "web"
+
+    class Meta:
+        topic = "user.signup.completed"
+        version = "v2"
+        description = "User completed signup process (class-based API, v2)"
 
 
 # Create Celery app
@@ -66,6 +87,52 @@ def notify_admin(data: UserSignupCompleted):
     """Notify admin about new signup."""
     print(
         f"🔔 Admin notification: New user {data.email} signed up via {data.signup_source}"
+    )
+    # In a real app, you'd send admin notification here
+    return f"Admin notified about user {data.user_id}"
+
+
+# Option 2: Class-based API handlers (v2)
+# These handlers receive dynamically-typed Pydantic models from the schema registry
+# Note: version="v2" specifies we want v2 events, default is "latest"
+@subscribe("user.signup.completed", version="v2")
+def send_welcome_email_v2(data):
+    """
+    Send welcome email to new user (class-based API, v2).
+
+    Args:
+        data: Dynamic Pydantic model with fields: user_id, email, company_id, signup_source
+    """
+    print(f"📧 [V2] Sending welcome email to {data.email} (user_id={data.user_id})")
+    # In a real app, you'd send an email here
+    return f"Welcome email sent to {data.email}"
+
+
+@subscribe("user.signup.completed", version="v2")
+def update_user_analytics_v2(data):
+    """
+    Update analytics for new signup (class-based API, v2).
+
+    Args:
+        data: Dynamic Pydantic model with fields: user_id, email, company_id, signup_source
+    """
+    print(
+        f"📊 [V2] Updating analytics for user {data.user_id} from {data.signup_source}"
+    )
+    # In a real app, you'd update analytics here
+    return f"Analytics updated for user {data.user_id}"
+
+
+@subscribe("user.signup.completed", version="v2")
+def notify_admin_v2(data):
+    """
+    Notify admin about new signup (class-based API, v2).
+
+    Args:
+        data: Dynamic Pydantic model with fields: user_id, email, company_id, signup_source
+    """
+    print(
+        f"🔔 [V2] Admin notification: New user {data.email} signed up via {data.signup_source}"
     )
     # In a real app, you'd send admin notification here
     return f"Admin notified about user {data.user_id}"

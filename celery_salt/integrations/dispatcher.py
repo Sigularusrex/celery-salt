@@ -11,6 +11,10 @@ from pydantic import BaseModel
 
 from celery_salt.integrations.registry import get_handler_registry
 from celery_salt.utils.json_encoder import loads_message
+from celery_salt.core.versioning import (
+    is_version_compatible,
+    compare_versions,
+)
 from celery_salt.logging.handlers import (
     get_logger,
     log_message_received,
@@ -69,8 +73,9 @@ def create_topic_dispatcher(
             else:
                 deserialized = message_body
 
-            # Extract message type from _tchu_meta
+            # Extract message type and version from _tchu_meta
             # Protocol compatibility: Handle both celery-salt and tchu-tchu messages
+            message_version = None
             if "_tchu_meta" not in deserialized:
                 # No metadata = old 2.x message or tchu-tchu message, default to direct call
                 is_rpc = True
@@ -80,9 +85,54 @@ def create_topic_dispatcher(
             else:
                 tchu_meta = deserialized["_tchu_meta"]
                 is_rpc = tchu_meta.get("is_rpc", False)
+                message_version = tchu_meta.get("version")
 
             # Get all matching handlers for this routing key
-            handlers = registry.get_handlers(routing_key)
+            all_handlers = registry.get_handlers(routing_key)
+
+            # Filter handlers by version compatibility
+            # Rules:
+            # - Handler with specific version receives same or newer message versions (backward compatible)
+            # - Handler with "latest" receives all messages
+            # - Warn if handler is on older version than message (subscriber needs to upgrade)
+            handlers = []
+            for handler_info in all_handlers:
+                handler_version = handler_info.get("metadata", {}).get(
+                    "version", "latest"
+                )
+
+                # Normalize handler version
+                if handler_version is None:
+                    handler_version = "latest"
+
+                # Case 1: Message has no version (legacy/tchu-tchu compatibility)
+                if message_version is None:
+                    # Only handlers with "latest" should receive it
+                    if handler_version == "latest":
+                        handlers.append(handler_info)
+                    continue
+
+                # Case 2: Handler subscribes to "latest"
+                if handler_version == "latest":
+                    # "latest" handlers receive all messages
+                    handlers.append(handler_info)
+                    continue
+
+                # Case 3: Handler subscribes to specific version
+                # Handler receives messages with same or newer versions (backward compatible)
+                # Handler does NOT receive messages with older versions (defensive check)
+                if is_version_compatible(handler_version, message_version):
+                    # Check if handler is on older version (for warning)
+                    comparison = compare_versions(handler_version, message_version)
+                    if comparison < 0:
+                        # Handler version < message version (handler is on older version)
+                        logger.warning(
+                            f"Handler '{handler_info.get('name', 'unknown')}' subscribed to "
+                            f"{handler_version} is processing {message_version} message for topic "
+                            f"'{routing_key}'. Subscriber is on an older version. "
+                            f"Consider upgrading subscriber to {message_version}."
+                        )
+                    handlers.append(handler_info)
 
             if not handlers:
                 logger.warning(

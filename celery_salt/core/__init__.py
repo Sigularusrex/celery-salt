@@ -1,6 +1,7 @@
 """Core CelerySalt functionality."""
 
 from celery_salt.core.decorators import event, subscribe
+from celery_salt.core.events import SaltEvent
 from celery_salt.core.exceptions import (
     CelerySaltError,
     SchemaConflictError,
@@ -17,6 +18,7 @@ from celery_salt.core.decorators import response, error
 __all__ = [
     "event",
     "subscribe",
+    "SaltEvent",
     "CelerySaltError",
     "SchemaConflictError",
     "SchemaRegistryUnavailableError",

@@ -17,7 +17,10 @@ from celery import Celery
 from celery_salt import event, RPCError
 
 # Configure Celery (required for RPC calls)
-from celery_salt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
+from celery_salt.core.decorators import (
+    DEFAULT_EXCHANGE_NAME,
+    DEFAULT_DISPATCHER_TASK_NAME,
+)
 
 app = Celery("client")
 app.conf.broker_url = "amqp://guest:guest@localhost:5672//"
@@ -40,10 +43,13 @@ app.conf.task_routes = {
 # Set the Celery app as the default
 app.set_default()
 
+
+# Option 1: Decorator-based API (simple)
 # Define the RPC request schema
 @event("rpc.calculator.add", mode="rpc")
 class CalculatorAddRequest:
     """RPC request to add two numbers."""
+
     a: float
     b: float
 
@@ -52,6 +58,7 @@ class CalculatorAddRequest:
 @event.response("rpc.calculator.add")
 class CalculatorAddResponse:
     """Response from calculator add operation."""
+
     result: float
     operation: str = "add"
 
@@ -60,17 +67,65 @@ class CalculatorAddResponse:
 @event.error("rpc.calculator.add")
 class CalculatorAddError:
     """Error response from calculator add operation."""
+
     error_code: str
     error_message: str
     details: dict | None = None
 
 
+# Option 2: Class-based API (for custom logic)
+from celery_salt import SaltEvent
+from pydantic import BaseModel
+
+
+class CalculatorAddRequestV2(SaltEvent):
+    """RPC request to add two numbers (class-based version, v2)."""
+
+    class Schema(BaseModel):
+        a: float
+        b: float
+
+    class Response(BaseModel):
+        result: float
+        operation: str = "add"
+
+    class Error(BaseModel):
+        error_code: str
+        error_message: str
+        details: dict | None = None
+
+    class Meta:
+        topic = "rpc.calculator.add"
+        version = "v2"
+        mode = "rpc"
+        description = "Add two numbers (class-based API, v2)"
+
+    def validate_inputs(self) -> bool:
+        """Validate that inputs are within acceptable range."""
+        return abs(self.data.a) <= 1e10 and abs(self.data.b) <= 1e10
+
+    def call(self, timeout: int = 30, **kwargs):
+        """Custom call with validation."""
+        if not self.validate_inputs():
+            # Return error response directly
+            return self.Error(
+                error_code="VALUE_TOO_LARGE",
+                error_message="Input values are too large",
+                details={"a": self.data.a, "b": self.data.b, "max": 1e10},
+            )
+        return super().call(timeout=timeout, **kwargs)
+
+
 def main():
-    """Make RPC calls to the calculator service."""
+    """Make RPC calls to the calculator service using both APIs."""
     print("🔢 Making RPC calls to calculator service...")
     print()
+    print("=" * 60)
+    print("Option 1: Decorator-based API (Add operation)")
+    print("=" * 60)
+    print()
 
-    # Test cases
+    # Test cases for decorator-based API
     test_cases = [
         (10, 5),
         (100, 200),
@@ -81,10 +136,10 @@ def main():
     for a, b in test_cases:
         try:
             print(f"Request: {a} + {b} = ?")
-            
-            # Make RPC call (synchronous, waits for response)
+
+            # Option 1: Decorator-based API (class method)
             response = CalculatorAddRequest.call(a=a, b=b, timeout=10)
-            
+
             # Check if it's an error response
             if isinstance(response, CalculatorAddError):
                 print(f"  ❌ Error: {response.error_message} ({response.error_code})")
@@ -92,12 +147,48 @@ def main():
                 # Success response
                 print(f"  ✅ Result: {response.result}")
                 print(f"     Operation: {response.operation}")
-            
+
         except RPCError as e:
             print(f"  ❌ RPC Error: {e.error_message} ({e.error_code})")
         except Exception as e:
             print(f"  ❌ Unexpected error: {e}")
-        
+
+        print()
+
+    print("=" * 60)
+    print("Option 2: Class-based API (Add operation, v2)")
+    print("=" * 60)
+    print()
+
+    # Test cases for class-based API (v2)
+    v2_cases = [
+        (5, 4),
+        (10, 3),
+        (2.5, 4.0),
+        (1e11, 1),  # This should trigger validation error
+    ]
+
+    for a, b in v2_cases:
+        try:
+            print(f"Request (v2): {a} + {b} = ?")
+
+            # Option 2: Class-based API (instance method) - uses v2 schema
+            request = CalculatorAddRequestV2(a=a, b=b)
+            response = request.call(timeout=10)
+
+            # Check if it's an error response
+            if isinstance(response, CalculatorAddRequestV2.Error):
+                print(f"  ❌ Error: {response.error_message} ({response.error_code})")
+            else:
+                # Success response
+                print(f"  ✅ Result: {response.result}")
+                print(f"     Operation: {response.operation}")
+
+        except RPCError as e:
+            print(f"  ❌ RPC Error: {e.error_message} ({e.error_code})")
+        except Exception as e:
+            print(f"  ❌ Unexpected error: {e}")
+
         print()
 
     print("✅ All RPC calls completed!")

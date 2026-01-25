@@ -15,7 +15,10 @@ Run:
 from celery import Celery
 from celery_salt import event
 from celery_salt.integrations.producer import publish_event
-from celery_salt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
+from celery_salt.core.decorators import (
+    DEFAULT_EXCHANGE_NAME,
+    DEFAULT_DISPATCHER_TASK_NAME,
+)
 
 # Configure Celery to route dispatcher tasks to the topic exchange
 app = Celery("publisher")
@@ -47,7 +50,7 @@ app.conf.task_routes = {
 app.set_default()
 
 
-# Define the event schema
+# Option 1: Decorator-based API (simple)
 @event("user.signup.completed")
 class UserSignupCompleted:
     """Event published when a user completes signup."""
@@ -58,12 +61,46 @@ class UserSignupCompleted:
     signup_source: str = "web"
 
 
+# Option 2: Class-based API (for custom logic)
+from celery_salt import SaltEvent
+from pydantic import BaseModel
+
+
+class UserSignupCompletedV2(SaltEvent):
+    """Event published when a user completes signup (class-based version)."""
+
+    class Schema(BaseModel):
+        user_id: int
+        email: str
+        company_id: int
+        signup_source: str = "web"
+
+    class Meta:
+        topic = "user.signup.completed"
+        version = "v2"
+        description = "User completed signup process (class-based API, v2)"
+
+    def is_premium_user(self) -> bool:
+        """Check if user is premium based on user_id."""
+        return self.data.user_id > 1000
+
+    def publish(self, **kwargs):
+        """Custom publish with premium user logging."""
+        if self.is_premium_user():
+            print(f"  ⭐ Premium user signup: {self.data.email}")
+        return super().publish(**kwargs)
+
+
 def main():
-    """Publish a few example events."""
+    """Publish a few example events using both APIs."""
     print("📤 Publishing broadcast events...")
     print()
+    print("=" * 60)
+    print("Option 1: Decorator-based API")
+    print("=" * 60)
+    print()
 
-    # Publish events
+    # Publish events using decorator-based API
     events = [
         {
             "user_id": 123,
@@ -86,10 +123,40 @@ def main():
     ]
 
     for event_data in events:
-        # Use the class method - Celery is now configured to route to topic exchange
+        # Option 1: Decorator-based API (class method)
         message_id = UserSignupCompleted.publish(**event_data)
         print(
-            f"✓ Published event: user_id={event_data['user_id']}, message_id={message_id}"
+            f"✓ Published event (decorator): user_id={event_data['user_id']}, message_id={message_id}"
+        )
+
+    print()
+    print("=" * 60)
+    print("Option 2: Class-based API (with custom logic, v2)")
+    print("=" * 60)
+    print()
+
+    # Publish events using class-based API (v2)
+    class_based_events = [
+        {
+            "user_id": 2000,  # Premium user (user_id > 1000)
+            "email": "premium@example.com",
+            "company_id": 1,
+            "signup_source": "web",
+        },
+        {
+            "user_id": 500,
+            "email": "regular@example.com",
+            "company_id": 2,
+            "signup_source": "mobile",
+        },
+    ]
+
+    for event_data in class_based_events:
+        # Option 2: Class-based API (instance method) - publishes as v2
+        event = UserSignupCompletedV2(**event_data)
+        message_id = event.publish()
+        print(
+            f"✓ Published event (class-based v2): user_id={event_data['user_id']}, message_id={message_id}"
         )
 
     print()

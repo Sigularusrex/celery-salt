@@ -49,6 +49,8 @@ def publish_event(
     celery_app: Optional[Any] = None,
     dispatcher_task_name: str = DEFAULT_DISPATCHER_TASK_NAME,
     broker_url: Optional[str] = None,
+    version: Optional[str] = None,
+    **publish_kwargs,
 ) -> str:
     """
     Publish an event to a topic (broadcast to all subscribers).
@@ -79,9 +81,14 @@ def publish_event(
         message_id = str(uuid.uuid4())
 
         # Add _tchu_meta for protocol compatibility with tchu-tchu
+        # Include version if provided
+        tchu_meta = {"is_rpc": is_rpc}
+        if version:
+            tchu_meta["version"] = version
+        
         body_with_meta = {
             **data,
-            "_tchu_meta": {"is_rpc": is_rpc},
+            "_tchu_meta": tchu_meta,
         }
         serialized_body = dumps_message(body_with_meta)
 
@@ -246,6 +253,8 @@ def call_rpc(
     celery_app: Optional[Any] = None,
     dispatcher_task_name: str = DEFAULT_DISPATCHER_TASK_NAME,
     allow_join: bool = False,
+    version: Optional[str] = None,
+    **call_kwargs,
 ) -> Any:
     """
     Send a message and wait for a response (RPC-style).
@@ -288,9 +297,14 @@ def call_rpc(
         message_id = str(uuid.uuid4())
 
         # Add _tchu_meta for protocol compatibility
+        # Include version if provided
+        tchu_meta = {"is_rpc": True}
+        if version:
+            tchu_meta["version"] = version
+        
         body_with_meta = {
             **data,
-            "_tchu_meta": {"is_rpc": True},
+            "_tchu_meta": tchu_meta,
         }
         serialized_body = dumps_message(body_with_meta)
 
