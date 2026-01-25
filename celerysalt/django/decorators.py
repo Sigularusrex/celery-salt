@@ -32,7 +32,7 @@ def auto_publish(
 
     Two modes:
         1. Raw mode (without event_classes): Publishes raw dicts to generated topics
-        2. Event class mode (with event_classes): Uses TchuEvent classes with validation
+        2. Event class mode (with event_classes): Uses event classes with validation (legacy compatibility)
 
     IMPORTANT: If your serializers use self.context, you MUST provide a context_provider.
     See CONTEXT_PROVIDER_GUIDE.md for patterns.
@@ -43,7 +43,7 @@ def auto_publish(
         publish_on: Events to publish ["created", "updated", "deleted"] (auto-inferred if using event_classes)
 
         # Event class mode (recommended):
-        event_classes: Dict mapping event types to TchuEvent classes
+        event_classes: Dict mapping event types to event classes (legacy compatibility)
                       Example: {"created": MyCreatedEvent, "updated": MyUpdatedEvent}
         context_provider: Function to extract context from instance for serializers
                          Signature: (instance, event_type) -> Dict[str, Any]

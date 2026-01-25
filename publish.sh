@@ -21,7 +21,7 @@ fi
 # Prompt user for confirmation before publishing
 echo ""
 echo "Package built successfully!"
-echo "Ready to publish tchu-tchu to PyPI"
+echo "Ready to publish celery-salt to PyPI"
 echo ""
 read -p "Publish to TestPyPI first? (y/n) " -n 1 -r
 echo ""
@@ -31,7 +31,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
   poetry publish -r testpypi
   echo ""
   echo "Published to TestPyPI. Test with:"
-  echo "pip install --index-url https://test.pypi.org/simple/ tchu-tchu"
+  echo "pip install --index-url https://test.pypi.org/simple/ celery-salt"
   echo ""
 fi
 
@@ -42,7 +42,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
   poetry publish
   echo ""
   echo "✅ Successfully published to PyPI!"
-  echo "Install with: pip install tchu-tchu"
+  echo "Install with: pip install celery-salt"
 else
   echo "Skipping PyPI publication"
 fi
