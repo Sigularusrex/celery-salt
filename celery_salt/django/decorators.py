@@ -2,8 +2,8 @@
 
 from typing import List, Optional, Callable, Any, Dict, Type
 
-from celerysalt.integrations.client import TchuClient
-from celerysalt.logging.handlers import get_logger
+from celery_salt.integrations.client import TchuClient
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 

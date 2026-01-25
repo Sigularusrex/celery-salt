@@ -3,7 +3,7 @@
 from typing import Any, Dict, Union
 from celery.result import GroupResult, AsyncResult, EagerResult
 
-from celerysalt.logging.handlers import get_logger
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 

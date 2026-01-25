@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from celerysalt.logging.formatters import CelerySaltFormatter
+from celery_salt.logging.formatters import CelerySaltFormatter
 
 
 def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:

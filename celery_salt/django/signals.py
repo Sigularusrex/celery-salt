@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from celerysalt.logging.handlers import get_logger
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 

@@ -5,12 +5,12 @@ Extends Celery with event publishing/subscribing patterns, schema validation,
 and automatic retries while maintaining the familiar Celery developer experience.
 """
 
-from celerysalt.core import event, subscribe, RPCError
-from celerysalt.integrations.dispatcher import (
+from celery_salt.core import event, subscribe, RPCError
+from celery_salt.integrations.dispatcher import (
     create_topic_dispatcher,
     get_subscribed_routing_keys,
 )
-from celerysalt.version import __version__
+from celery_salt.version import __version__
 
 # Protocol compatibility: Keep exchange name for backward compatibility
 DEFAULT_EXCHANGE_NAME = "tchu_events"

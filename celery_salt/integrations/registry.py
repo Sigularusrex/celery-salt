@@ -10,7 +10,7 @@ from typing import Dict, List, Callable, Any, Optional
 from collections import defaultdict
 from threading import Lock
 
-from celerysalt.logging.handlers import get_logger
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 

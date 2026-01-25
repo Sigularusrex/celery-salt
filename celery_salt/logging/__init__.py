@@ -1,7 +1,7 @@
 """Structured logging utilities for tchu-tchu."""
 
-from celerysalt.logging.formatters import CelerySaltFormatter
-from celerysalt.logging.handlers import get_logger
+from celery_salt.logging.formatters import CelerySaltFormatter
+from celery_salt.logging.handlers import get_logger
 
 # Backward compatibility alias
 TchuFormatter = CelerySaltFormatter

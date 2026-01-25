@@ -7,8 +7,8 @@ with existing Django decorators and mixins.
 
 from typing import Any, Dict, Union, Optional
 
-from celerysalt.integrations.producer import publish_event, call_rpc
-from celerysalt.logging.handlers import get_logger
+from celery_salt.integrations.producer import publish_event, call_rpc
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 

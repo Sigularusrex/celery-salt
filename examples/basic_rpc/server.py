@@ -14,8 +14,8 @@ Run:
 """
 
 from celery import Celery
-from celerysalt import event, subscribe, RPCError
-from celerysalt.integrations.dispatcher import create_topic_dispatcher, get_subscribed_routing_keys
+from celery_salt import event, subscribe, RPCError
+from celery_salt.integrations.dispatcher import create_topic_dispatcher, get_subscribed_routing_keys
 
 # Define the RPC request schema (must match client)
 @event("rpc.calculator.add", mode="rpc")
@@ -56,7 +56,7 @@ app.conf.enable_utc = True
 dispatcher = create_topic_dispatcher(app)
 
 # Configure queue routing for the dispatcher
-from celerysalt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
+from celery_salt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
 
 app.conf.task_routes = {
     DEFAULT_DISPATCHER_TASK_NAME: {

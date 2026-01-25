@@ -10,10 +10,10 @@ Works with or without Celery - falls back to kombu for serverless environments.
 import uuid
 from typing import Any, Dict, Optional
 
-from celerysalt.utils.json_encoder import dumps_message
-from celerysalt.core.exceptions import PublishError, TimeoutError as CelerySaltTimeoutError
-from celerysalt.logging.handlers import get_logger
-from celerysalt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
+from celery_salt.utils.json_encoder import dumps_message
+from celery_salt.core.exceptions import PublishError, TimeoutError as CelerySaltTimeoutError
+from celery_salt.logging.handlers import get_logger
+from celery_salt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
 
 logger = get_logger(__name__)
 

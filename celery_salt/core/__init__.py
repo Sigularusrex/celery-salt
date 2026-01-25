@@ -1,7 +1,7 @@
 """Core CelerySalt functionality."""
 
-from celerysalt.core.decorators import event, subscribe
-from celerysalt.core.exceptions import (
+from celery_salt.core.decorators import event, subscribe
+from celery_salt.core.exceptions import (
     CelerySaltError,
     SchemaConflictError,
     SchemaRegistryUnavailableError,
@@ -12,7 +12,7 @@ from celerysalt.core.exceptions import (
 
 # Expose response and error decorators via event function
 # Usage: @event.response("rpc.topic") or @event.error("rpc.topic")
-from celerysalt.core.decorators import response, error
+from celery_salt.core.decorators import response, error
 
 __all__ = [
     "event",

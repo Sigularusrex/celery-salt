@@ -7,7 +7,7 @@ from threading import Lock
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from celerysalt.logging.handlers import get_logger
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 

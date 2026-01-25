@@ -14,7 +14,7 @@ Run:
 """
 
 from celery import Celery
-from celerysalt import event, RPCError
+from celery_salt import event, RPCError
 
 # Configure Celery (required for RPC calls)
 app = Celery("client")

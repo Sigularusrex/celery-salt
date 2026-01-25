@@ -9,8 +9,8 @@ from typing import Dict, Any, Optional
 from threading import Lock
 from collections import defaultdict
 
-from celerysalt.core.exceptions import SchemaRegistryUnavailableError
-from celerysalt.logging.handlers import get_logger
+from celery_salt.core.exceptions import SchemaRegistryUnavailableError
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 

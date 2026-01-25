@@ -8,19 +8,19 @@ with import-time schema registration for early error detection.
 from typing import Type, Any, Callable
 from pydantic import BaseModel, create_model, ValidationError
 
-from celerysalt.core.exceptions import (
+from celery_salt.core.exceptions import (
     SchemaConflictError,
     SchemaRegistryUnavailableError,
     RPCError,
 )
-from celerysalt.core.registry import get_schema_registry
-from celerysalt.logging.handlers import get_logger
+from celery_salt.core.registry import get_schema_registry
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 
 # Protocol compatibility: Keep exchange name for backward compatibility with tchu-tchu
 DEFAULT_EXCHANGE_NAME = "tchu_events"
-DEFAULT_DISPATCHER_TASK_NAME = "celerysalt.dispatch_event"
+DEFAULT_DISPATCHER_TASK_NAME = "celery_salt.dispatch_event"
 
 # Global registry for RPC response/error schemas
 _rpc_response_schemas: dict[str, Type[BaseModel]] = {}
@@ -313,7 +313,7 @@ def _create_publish_method(
         _ensure_schema_registered(topic, model, cls)
 
         # 3. Publish to broker
-        from celerysalt.integrations.producer import publish_event
+        from celery_salt.integrations.producer import publish_event
 
         return publish_event(
             topic=topic,
@@ -342,7 +342,7 @@ def _create_rpc_method(
         _ensure_schema_registered(topic, model, cls)
 
         # 3. Make RPC call
-        from celerysalt.integrations.producer import call_rpc
+        from celery_salt.integrations.producer import call_rpc
 
         response = call_rpc(
             topic=topic,
@@ -532,13 +532,13 @@ def subscribe(
         from celery import shared_task
 
         task = shared_task(
-            name=f"celerysalt.{topic}.{func.__name__}",
+            name=f"celery_salt.{topic}.{func.__name__}",
             bind=True,  # Always bind to get task instance
             **celery_options,
         )(validated_handler)
 
         # 5. Register handler in global registry (for queue binding)
-        from celerysalt.integrations.registry import get_handler_registry
+        from celery_salt.integrations.registry import get_handler_registry
 
         registry = get_handler_registry()
         registry.register_handler(topic, task)

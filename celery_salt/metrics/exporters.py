@@ -5,8 +5,8 @@ from typing import Dict, Any, Optional
 from datetime import timedelta
 from abc import ABC, abstractmethod
 
-from celerysalt.metrics.collectors import MetricsCollector, get_metrics_collector
-from celerysalt.logging.handlers import get_logger
+from celery_salt.metrics.collectors import MetricsCollector, get_metrics_collector
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 

@@ -9,15 +9,15 @@ import json
 from typing import Any, Optional
 from pydantic import BaseModel
 
-from celerysalt.integrations.registry import get_handler_registry
-from celerysalt.utils.json_encoder import loads_message
-from celerysalt.logging.handlers import (
+from celery_salt.integrations.registry import get_handler_registry
+from celery_salt.utils.json_encoder import loads_message
+from celery_salt.logging.handlers import (
     get_logger,
     log_message_received,
     log_handler_executed,
     log_error,
 )
-from celerysalt.core.decorators import DEFAULT_DISPATCHER_TASK_NAME
+from celery_salt.core.decorators import DEFAULT_DISPATCHER_TASK_NAME
 
 logger = get_logger(__name__)
 
@@ -195,7 +195,7 @@ def get_subscribed_routing_keys(
                 f"Handlers may not be registered yet."
             )
 
-    from celerysalt.integrations.registry import get_handler_registry
+    from celery_salt.integrations.registry import get_handler_registry
 
     registry = get_handler_registry()
     all_keys = registry.get_all_routing_keys()

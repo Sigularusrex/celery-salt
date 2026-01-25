@@ -7,11 +7,11 @@ from kombu import Exchange, Queue, binding
 from celery import Celery as CeleryCelery
 from celery.signals import worker_ready, celeryd_after_setup
 
-from celerysalt.integrations.dispatcher import (
+from celery_salt.integrations.dispatcher import (
     get_subscribed_routing_keys,
     create_topic_dispatcher,
 )
-from celerysalt.logging.handlers import get_logger
+from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
 
@@ -49,7 +49,7 @@ def setup_celery_queue(
         app = Celery("my_app")
         app.config_from_object("django.conf:settings", namespace="CELERY")
 
-        from celerysalt.django import setup_celery_queue
+        from celery_salt.django import setup_celery_queue
         setup_celery_queue(
             app,
             queue_name="my_queue",
@@ -134,7 +134,7 @@ def setup_celery_queue(
     @worker_ready.connect
     def _log_on_worker_ready(sender=None, **kwargs):
         """Log summary when worker is fully ready."""
-        from celerysalt.integrations.registry import get_handler_registry
+        from celery_salt.integrations.registry import get_handler_registry
 
         handler_count = get_handler_registry().get_handler_count()
 
@@ -150,10 +150,10 @@ def setup_celery_queue(
 
     # Route dispatcher task to this queue (no database access needed)
     celery_app.conf.task_routes = {
-        "celerysalt.dispatch_event": {
+        "celery_salt.dispatch_event": {
             "queue": queue_name,
             "exchange": exchange_name,
-            "routing_key": "celerysalt.dispatch_event",
+            "routing_key": "celery_salt.dispatch_event",
         },
     }
 
@@ -167,7 +167,7 @@ def setup_celery_queue(
     # Set prefetch=1 for reliable RPC handling (prevents race conditions)
     celery_app.conf.worker_prefetch_multiplier = 1
 
-    # Create the dispatcher task (registers celerysalt.dispatch_event)
+    # Create the dispatcher task (registers celery_salt.dispatch_event)
     # This doesn't require database access
     create_topic_dispatcher(celery_app)
 
@@ -189,7 +189,7 @@ class Celery(CeleryCelery):
         import django
         django.setup()
 
-        from celerysalt.django import Celery
+        from celery_salt.django import Celery
 
         app = Celery("my_app")
         app.config_from_object("django.conf:settings", namespace="CELERY")

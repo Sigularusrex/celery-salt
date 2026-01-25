@@ -13,8 +13,8 @@ Run:
 """
 
 from celery import Celery
-from celerysalt import event
-from celerysalt.integrations.producer import publish_event
+from celery_salt import event
+from celery_salt.integrations.producer import publish_event
 
 # Configure Celery (minimal config for publishing)
 app = Celery("publisher")

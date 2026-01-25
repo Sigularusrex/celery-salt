@@ -3,7 +3,7 @@
 from typing import Optional
 
 # Re-export from core exceptions for backward compatibility
-from celerysalt.core.exceptions import (
+from celery_salt.core.exceptions import (
     CelerySaltError,
     PublishError,
     TimeoutError,
