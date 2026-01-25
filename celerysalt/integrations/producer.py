@@ -1,13 +1,14 @@
 """
-Producer for publishing events via Celery.
+Producer for publishing events via Celery or directly via kombu.
 
 Maintains protocol compatibility with tchu-tchu by using the same
 exchange name and message format.
+
+Works with or without Celery - falls back to kombu for serverless environments.
 """
 
 import uuid
 from typing import Any, Dict, Optional
-from celery import current_app
 
 from celerysalt.utils.json_encoder import dumps_message
 from celerysalt.core.exceptions import PublishError, TimeoutError as CelerySaltTimeoutError
@@ -15,6 +16,21 @@ from celerysalt.logging.handlers import get_logger
 from celerysalt.core.decorators import DEFAULT_EXCHANGE_NAME, DEFAULT_DISPATCHER_TASK_NAME
 
 logger = get_logger(__name__)
+
+# Try to import Celery (optional for serverless)
+try:
+    from celery import current_app
+    CELERY_AVAILABLE = True
+except ImportError:
+    CELERY_AVAILABLE = False
+    current_app = None
+
+# Try to import kombu (required for serverless fallback)
+try:
+    from kombu import Connection, Exchange, Producer
+    KOMBU_AVAILABLE = True
+except ImportError:
+    KOMBU_AVAILABLE = False
 
 
 def publish_event(
@@ -24,9 +40,14 @@ def publish_event(
     is_rpc: bool = False,
     celery_app: Optional[Any] = None,
     dispatcher_task_name: str = DEFAULT_DISPATCHER_TASK_NAME,
+    broker_url: Optional[str] = None,
 ) -> str:
     """
     Publish an event to a topic (broadcast to all subscribers).
+
+    Works with or without Celery:
+    - With Celery: Uses Celery's send_task (preferred for long-running apps)
+    - Without Celery: Uses kombu directly (for serverless environments)
 
     Protocol compatibility: Uses same exchange name and message format as tchu-tchu.
 
@@ -37,6 +58,7 @@ def publish_event(
         is_rpc: Whether this is an RPC call (default: False)
         celery_app: Optional Celery app instance (uses current_app if None)
         dispatcher_task_name: Name of the dispatcher task
+        broker_url: Optional broker URL for serverless mode (required if no Celery app)
 
     Returns:
         Message ID for tracking
@@ -45,8 +67,6 @@ def publish_event(
         PublishError: If publishing fails
     """
     try:
-        app = celery_app or current_app
-
         # Generate unique message ID
         message_id = str(uuid.uuid4())
 
@@ -57,25 +77,106 @@ def publish_event(
         }
         serialized_body = dumps_message(body_with_meta)
 
-        # Send task to dispatcher with routing_key in properties
-        app.send_task(
-            dispatcher_task_name,
-            args=[serialized_body],
-            kwargs={"routing_key": topic},
-            routing_key=topic,  # Used by AMQP for routing to queues
-            task_id=message_id,
+        # Try Celery first (if available)
+        if CELERY_AVAILABLE:
+            try:
+                app = celery_app or current_app
+                if app is not None:
+                    # Send task to dispatcher with routing_key in properties
+                    app.send_task(
+                        dispatcher_task_name,
+                        args=[serialized_body],
+                        kwargs={"routing_key": topic},
+                        routing_key=topic,  # Used by AMQP for routing to queues
+                        task_id=message_id,
+                    )
+
+                    logger.info(
+                        f"Published message {message_id} to routing key '{topic}' (via Celery)",
+                        extra={"routing_key": topic, "message_id": message_id},
+                    )
+
+                    return message_id
+            except (AttributeError, RuntimeError):
+                # Celery app not available or not configured, fall through to kombu
+                pass
+
+        # Fallback to kombu for serverless environments
+        if not KOMBU_AVAILABLE:
+            raise PublishError(
+                "Cannot publish: Celery not available and kombu not installed. "
+                "Install kombu for serverless support: pip install kombu"
+            )
+
+        if broker_url is None:
+            raise PublishError(
+                "broker_url required for serverless mode (no Celery app available). "
+                "Provide broker_url or configure Celery app."
+            )
+
+        # Use kombu directly (serverless mode)
+        _publish_via_kombu(
+            broker_url=broker_url,
+            exchange_name=exchange_name,
+            routing_key=topic,
+            message_body=serialized_body,
+            dispatcher_task_name=dispatcher_task_name,
+            message_id=message_id,
         )
 
         logger.info(
-            f"Published message {message_id} to routing key '{topic}'",
+            f"Published message {message_id} to routing key '{topic}' (via kombu/serverless)",
             extra={"routing_key": topic, "message_id": message_id},
         )
 
         return message_id
 
+    except PublishError:
+        raise
     except Exception as e:
         logger.error(f"Failed to publish message to routing key '{topic}': {e}", exc_info=True)
         raise PublishError(f"Failed to publish message: {e}")
+
+
+def _publish_via_kombu(
+    broker_url: str,
+    exchange_name: str,
+    routing_key: str,
+    message_body: str,
+    dispatcher_task_name: str,
+    message_id: str,
+) -> None:
+    """Publish message directly via kombu (serverless mode)."""
+    connection = None
+    try:
+        # Create connection
+        connection = Connection(broker_url)
+        connection.connect()
+
+        # Create exchange
+        exchange = Exchange(exchange_name, type="topic", durable=True)
+
+        # Create producer
+        producer = Producer(connection, exchange=exchange, serializer="json")
+
+        # Create task message (mimics Celery's task format)
+        task_message = {
+            "id": message_id,
+            "task": dispatcher_task_name,
+            "args": [message_body],
+            "kwargs": {"routing_key": routing_key},
+        }
+
+        # Publish
+        producer.publish(
+            task_message,
+            routing_key=routing_key,
+            declare=[exchange],
+        )
+
+    finally:
+        if connection:
+            connection.close()
 
 
 def call_rpc(
@@ -111,7 +212,17 @@ def call_rpc(
     import time
 
     start_time = time.time()
+    
+    # RPC requires Celery (for result backend)
+    if not CELERY_AVAILABLE:
+        raise PublishError(
+            "RPC calls require Celery (for result backend). "
+            "Install celery for RPC support: pip install celery"
+        )
+    
     app = celery_app or current_app
+    if app is None:
+        raise PublishError("Celery app required for RPC calls")
 
     try:
         # Generate unique message ID

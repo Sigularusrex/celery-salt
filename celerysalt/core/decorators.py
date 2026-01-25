@@ -305,7 +305,7 @@ def _create_publish_method(
     """Create publish method for broadcast events."""
 
     @classmethod
-    def publish(cls, **kwargs) -> str:
+    def publish(cls, broker_url: str | None = None, **kwargs) -> str:
         # 1. Validate data
         validated = model(**kwargs)
 
@@ -320,6 +320,7 @@ def _create_publish_method(
             data=validated.model_dump(),
             exchange_name=exchange_name,
             is_rpc=False,
+            broker_url=broker_url,
         )
 
     return publish
