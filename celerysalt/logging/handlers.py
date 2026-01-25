@@ -1,14 +1,14 @@
-"""Logging handlers and utilities for tchu-tchu."""
+"""Logging handlers and utilities for CelerySalt."""
 
 import logging
 from typing import Optional
 
-from celerysalt.logging.formatters import TchuFormatter
+from celerysalt.logging.formatters import CelerySaltFormatter
 
 
 def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
     """
-    Get a configured logger for tchu-tchu components.
+    Get a configured logger for CelerySalt components.
 
     Args:
         name: Logger name (typically __name__)
@@ -26,10 +26,10 @@ def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
         # Default to INFO if no handlers configured
         logger.setLevel(logging.INFO)
 
-    # Add handler with TchuFormatter if none exists
+    # Add handler with CelerySaltFormatter if none exists
     if not logger.handlers:
         handler = logging.StreamHandler()
-        handler.setFormatter(TchuFormatter())
+        handler.setFormatter(CelerySaltFormatter())
         logger.addHandler(handler)
 
     return logger

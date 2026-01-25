@@ -1,4 +1,4 @@
-"""Structured logging formatters for tchu-tchu."""
+"""Structured logging formatters for CelerySalt."""
 
 import json
 import logging
@@ -6,9 +6,9 @@ from datetime import datetime
 from typing import Any, Dict
 
 
-class TchuFormatter(logging.Formatter):
+class CelerySaltFormatter(logging.Formatter):
     """
-    Custom JSON formatter for structured logging in tchu-tchu.
+    Custom JSON formatter for structured logging in CelerySalt.
 
     Formats log records as JSON with consistent structure including:
     - timestamp
