@@ -1,9 +1,10 @@
 """Tests for decorators - testing actual functionality."""
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from celery_salt.core.decorators import event, subscribe
+from celery_salt.core.events import SaltEvent
 from celery_salt.core.registry import InMemorySchemaRegistry, set_schema_registry
 
 
@@ -150,3 +151,75 @@ class TestSubscribeDecoratorReal:
             return "processed"
 
         assert callable(handler)
+
+    def test_subscribe_can_wrap_payload_in_event_class(self):
+        """Test that subscribe(event_cls=...) passes a SaltEvent instance to handler."""
+
+        topic = "test.topic.event_cls"
+
+        # Register schema for subscribers to validate against
+        @event(topic, version="v1")
+        class Payload:
+            user_id: int
+            email: str
+
+        class UserSignup(SaltEvent):
+            class Schema(BaseModel):
+                user_id: int
+                email: str
+
+            class Meta:
+                topic = "test.topic.event_cls"
+                version = "v1"
+                auto_register = False
+
+        received: dict[str, object] = {}
+
+        @subscribe(topic, version="v1", event_cls=UserSignup)
+        def handler(evt: UserSignup):
+            received["type"] = type(evt)
+            received["user_id"] = evt.data.user_id
+            received["email"] = evt.data.email
+            return "processed"
+
+        # Call the underlying task wrapper directly (Celery binds `self`, but we don't use it)
+        # The decorated function is a Celery task; its `run` is our validated handler.
+        raw_payload = {"user_id": 123, "email": "user@example.com"}
+        handler.run(raw_payload)  # type: ignore[attr-defined]
+
+        assert received["type"] is UserSignup
+        assert received["user_id"] == 123
+        assert received["email"] == "user@example.com"
+
+    def test_subscribe_can_accept_event_class_directly(self):
+        """Test that @subscribe(EventClass) infers topic/version and passes event."""
+
+        topic = "test.topic.event_cls_direct"
+
+        @event(topic, version="v1")
+        class Payload:
+            user_id: int
+            email: str
+
+        class UserSignup(SaltEvent):
+            class Schema(BaseModel):
+                user_id: int
+                email: str
+
+            class Meta:
+                topic = "test.topic.event_cls_direct"
+                version = "v1"
+                auto_register = False
+
+        received: dict[str, object] = {}
+
+        @subscribe(UserSignup)
+        def handler(evt: UserSignup):
+            received["type"] = type(evt)
+            received["user_id"] = evt.data.user_id
+            return "processed"
+
+        handler.run({"user_id": 123, "email": "user@example.com"})  # type: ignore[attr-defined]
+
+        assert received["type"] is UserSignup
+        assert received["user_id"] == 123

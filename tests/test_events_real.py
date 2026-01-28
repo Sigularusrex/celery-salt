@@ -72,6 +72,14 @@ class TestSaltEventRealFunctionality:
         event2 = UserSignup(user_id=123, email="user@example.com", status="inactive")
         assert event2.data.status == "inactive"
 
+        # Convenience dump helpers
+        assert event.to_dict() == {
+            "user_id": 123,
+            "email": "user@example.com",
+            "status": "active",
+        }
+        assert event.payload["email"] == "user@example.com"
+
     def test_event_schema_registration(self):
         """Test that event schema is actually registered to registry."""
 

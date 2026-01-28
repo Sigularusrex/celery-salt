@@ -422,8 +422,9 @@ def _validate_rpc_response(topic: str, response: Any) -> Any:
 
 
 def subscribe(
-    topic: str,
+    topic: str | type,
     version: str = "latest",
+    event_cls: type | None = None,
     **celery_options,
 ) -> Callable:
     """
@@ -432,8 +433,16 @@ def subscribe(
     Handler becomes a Celery task with all Celery features available.
 
     Args:
-        topic: Event topic pattern (supports wildcards: user.*, #)
-        version: Schema version to validate against (default: "latest")
+        topic: Either an event topic pattern (supports wildcards: user.*, #)
+            or a `SaltEvent` subclass. When a `SaltEvent` subclass is passed,
+            `topic` and `version` are inferred from `event_cls.Meta`.
+        version: Schema version to validate against (default: "latest"). When
+            `topic` is a `SaltEvent` subclass and `version` is left as
+            `"latest"`, defaults to `event_cls.Meta.version`.
+        event_cls: Optional `SaltEvent` subclass. If provided (or inferred by
+            passing a `SaltEvent` subclass as the first argument), the handler
+            will receive a constructed event instance (validated payload wrapped
+            in the event class) instead of the raw validated payload model.
         **celery_options: All Celery task options
             - autoretry_for: Tuple of exceptions to retry
             - max_retries: Maximum retry attempts
@@ -448,11 +457,30 @@ def subscribe(
         @subscribe("user.signup.completed", autoretry_for=(Exception,))
         def send_welcome_email(data: UserSignup):
             send_email(data.email)
+
+        @subscribe(UserSignupEvent)  # topic/version inferred from Meta
+        def handler(evt: UserSignupEvent):
+            do_something(evt.data.user_id)
     """
 
     def decorator(func: Callable) -> Callable:
+        resolved_topic = topic
+        resolved_version = version
+        resolved_event_cls = event_cls
+
+        # Allow @subscribe(EventClass) where EventClass is a SaltEvent subclass.
+        if isinstance(resolved_topic, type):
+            # Local import to avoid circulars at import time.
+            from celery_salt.core.events import SaltEvent
+
+            if issubclass(resolved_topic, SaltEvent):
+                resolved_event_cls = resolved_topic
+                resolved_topic = resolved_event_cls.Meta.topic
+                if version == "latest":
+                    resolved_version = getattr(resolved_event_cls.Meta, "version", "v1")
+
         # 1. Fetch schema from registry
-        schema = _fetch_schema(topic, version)
+        schema = _fetch_schema(resolved_topic, resolved_version)
 
         # 2. Create Pydantic model from schema
         validation_model = _create_model_from_schema(schema)
@@ -476,7 +504,13 @@ def subscribe(
 
             # Call handler with validated data
             try:
-                result = func(validated)
+                handler_arg: Any = validated
+                if resolved_event_cls is not None:
+                    # Wrap the validated payload in a full event instance.
+                    # Note: event_cls.__init__ validates using its Schema too.
+                    handler_arg = resolved_event_cls(**validated.model_dump())
+
+                result = func(handler_arg)
             except RPCError as rpc_error:
                 # Convert RPCError to error response dict
                 if is_rpc:
@@ -524,7 +558,7 @@ def subscribe(
         from celery import shared_task
 
         task = shared_task(
-            name=f"celery_salt.{topic}.{func.__name__}",
+            name=f"celery_salt.{resolved_topic}.{func.__name__}",
             bind=True,  # Always bind to get task instance
             **celery_options,
         )(validated_handler)
@@ -534,15 +568,15 @@ def subscribe(
 
         registry = get_handler_registry()
         # Store version in metadata for version filtering
-        metadata = {"version": version}
-        registry.register_handler(topic, task, metadata=metadata)
+        metadata = {"version": resolved_version}
+        registry.register_handler(resolved_topic, task, metadata=metadata)
 
         # 6. Track subscriber in database (if schema registry supports it)
         try:
             schema_registry = get_schema_registry()
             if hasattr(schema_registry, "track_subscriber"):
                 schema_registry.track_subscriber(
-                    topic=topic,
+                    topic=resolved_topic,
                     handler_name=func.__name__,
                 )
         except Exception as e:

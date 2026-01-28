@@ -83,6 +83,24 @@ class SaltEvent(ABC):
         """
         self.data = self.Schema(**kwargs)
 
+    @property
+    def payload(self) -> dict[str, Any]:
+        """
+        Return the validated event payload as a plain dict.
+
+        This is a convenience alias for `to_dict()` with default options.
+        """
+        return self.to_dict()
+
+    def to_dict(self, **kwargs) -> dict[str, Any]:
+        """
+        Dump the validated event payload to a dict.
+
+        This delegates to Pydantic's `model_dump()` on the event schema instance.
+        Any `**kwargs` are forwarded to `model_dump()` (e.g. `exclude_none=True`).
+        """
+        return self.data.model_dump(**kwargs)
+
     def publish(self, broker_url: str | None = None, **kwargs) -> str:
         """
         Publish event to message broker.
@@ -114,7 +132,7 @@ class SaltEvent(ABC):
         # Use shared utility for validation and publishing
         return validate_and_publish(
             topic=self.Meta.topic,
-            data=self.data.model_dump(),
+            data=self.to_dict(),
             schema_model=self.Schema,
             exchange_name=self.Meta.exchange_name,
             broker_url=broker_url,
@@ -157,7 +175,7 @@ class SaltEvent(ABC):
         # Use shared utility for validation, RPC call, and response validation
         return validate_and_call_rpc(
             topic=self.Meta.topic,
-            data=self.data.model_dump(),
+            data=self.to_dict(),
             schema_model=self.Schema,
             timeout=timeout,
             exchange_name=self.Meta.exchange_name,
