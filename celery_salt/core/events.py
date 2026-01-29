@@ -109,6 +109,30 @@ class SaltEvent(ABC):
         """
         return self.data.model_dump(**kwargs)
 
+    def respond(self, **kwargs) -> Any:
+        """
+        Build a validated success response for RPC handlers.
+
+        Uses this event's Response schema. Handlers can return
+        event.respond(...) so the response is guaranteed to match the schema.
+
+        Only valid for events with mode="rpc".
+
+        Args:
+            **kwargs: Field values for the Response schema (e.g. result=42, operation="add")
+
+        Returns:
+            Response: Validated Pydantic model instance (event.Response)
+
+        Raises:
+            ValueError: If called on a non-RPC event
+        """
+        if self.Meta.mode != "rpc":
+            raise ValueError(
+                f"respond() is only for RPC events; {self.Meta.topic} has mode={self.Meta.mode!r}"
+            )
+        return self.Response(**kwargs)
+
     def publish(self, broker_url: str | None = None, **kwargs) -> str:
         """
         Publish event to message broker.
