@@ -9,6 +9,33 @@ from celery_salt.logging.handlers import get_logger
 logger = get_logger(__name__)
 
 
+def normalize_rpc_result(obj: Any) -> Any:
+    """
+    Convert list-of-pairs back to dict when present (serialization artifact).
+
+    Some Celery result backends or serializers store dicts as [[k, v], [k, v], ...].
+    This recursively converts that shape back to a plain dict so RPC callers
+    receive normal JSON-style objects.
+
+    Args:
+        obj: Raw value (possibly list-of-pairs at any nesting level)
+
+    Returns:
+        Same structure with any list-of-pairs converted to dict
+    """
+    if isinstance(obj, list):
+        # Heuristic: list of 2-element lists where first element is a string key
+        if obj and all(
+            isinstance(item, list) and len(item) == 2 and isinstance(item[0], str)
+            for item in obj
+        ):
+            return {k: normalize_rpc_result(v) for k, v in obj}
+        return [normalize_rpc_result(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: normalize_rpc_result(v) for k, v in obj.items()}
+    return obj
+
+
 def serialize_celery_result(
     result: GroupResult | AsyncResult | EagerResult | Any,
 ) -> dict[str, Any] | Any:

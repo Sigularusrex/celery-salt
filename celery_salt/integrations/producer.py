@@ -27,6 +27,7 @@ from celery_salt.observability.opentelemetry import (
     set_publish_span_attributes,
 )
 from celery_salt.utils.json_encoder import dumps_message
+from celery_salt.utils.response_handler import normalize_rpc_result
 
 logger = get_logger(__name__)
 
@@ -393,6 +394,9 @@ def call_rpc(
                 },
             )
 
+            # Normalize in case result backend stored dicts as list-of-pairs
+            response = normalize_rpc_result(response)
+
             # Extract the actual result from the dispatcher response
             if isinstance(response, dict):
                 # Check if there were no handlers
@@ -404,7 +408,8 @@ def call_rpc(
                 if results:
                     first_result = results[0]
                     if first_result.get("status") == "success":
-                        return first_result.get("result")
+                        raw = first_result.get("result")
+                        return normalize_rpc_result(raw)
                     else:
                         error = first_result.get("error", "Unknown error")
                         handler_name = first_result.get("handler", "unknown")
