@@ -21,6 +21,11 @@ from celery_salt.core.exceptions import (
     TimeoutError as CelerySaltTimeoutError,
 )
 from celery_salt.logging.handlers import get_logger
+from celery_salt.metrics.collectors import get_metrics_collector
+from celery_salt.observability.opentelemetry import (
+    inject_trace_context,
+    set_publish_span_attributes,
+)
 from celery_salt.utils.json_encoder import dumps_message
 
 logger = get_logger(__name__)
@@ -52,6 +57,7 @@ def publish_event(
     dispatcher_task_name: str = DEFAULT_DISPATCHER_TASK_NAME,
     broker_url: str | None = None,
     version: str | None = None,
+    correlation_id: str | None = None,
     **publish_kwargs,
 ) -> str:
     """
@@ -83,10 +89,13 @@ def publish_event(
         message_id = str(uuid.uuid4())
 
         # Add _tchu_meta for protocol compatibility with tchu-tchu
-        # Include version if provided
+        # Include version and correlation_id if provided (for observability/tracing)
         tchu_meta = {"is_rpc": is_rpc}
         if version:
             tchu_meta["version"] = version
+        if correlation_id:
+            tchu_meta["correlation_id"] = correlation_id
+        inject_trace_context(tchu_meta)
 
         body_with_meta = {
             **data,
@@ -113,6 +122,10 @@ def publish_event(
                 message_id=message_id,
             )
 
+            get_metrics_collector().record_message_published(
+                topic, task_id=message_id, metadata={"transport": "kombu"}
+            )
+            set_publish_span_attributes(topic, message_id=message_id, is_rpc=is_rpc)
             logger.info(
                 f"Published message {message_id} to routing key '{topic}' (via kombu)",
                 extra={"routing_key": topic, "message_id": message_id},
@@ -147,6 +160,12 @@ def publish_event(
                             task_id=message_id,
                         )
 
+                        get_metrics_collector().record_message_published(
+                            topic, task_id=message_id, metadata={"transport": "celery"}
+                        )
+                        set_publish_span_attributes(
+                            topic, message_id=message_id, is_rpc=is_rpc
+                        )
                         logger.info(
                             f"Published message {message_id} to routing key '{topic}' (via Celery)",
                             extra={"routing_key": topic, "message_id": message_id},
@@ -190,6 +209,10 @@ def publish_event(
             message_id=message_id,
         )
 
+        get_metrics_collector().record_message_published(
+            topic, task_id=message_id, metadata={"transport": "kombu_serverless"}
+        )
+        set_publish_span_attributes(topic, message_id=message_id, is_rpc=is_rpc)
         logger.info(
             f"Published message {message_id} to routing key '{topic}' (via kombu/serverless)",
             extra={"routing_key": topic, "message_id": message_id},
@@ -256,6 +279,7 @@ def call_rpc(
     dispatcher_task_name: str = DEFAULT_DISPATCHER_TASK_NAME,
     allow_join: bool = False,
     version: str | None = None,
+    correlation_id: str | None = None,
     **call_kwargs,
 ) -> Any:
     """
@@ -299,10 +323,13 @@ def call_rpc(
         message_id = str(uuid.uuid4())
 
         # Add _tchu_meta for protocol compatibility
-        # Include version if provided
+        # Include version and correlation_id if provided (for observability/tracing)
         tchu_meta = {"is_rpc": True}
         if version:
             tchu_meta["version"] = version
+        if correlation_id:
+            tchu_meta["correlation_id"] = correlation_id
+        inject_trace_context(tchu_meta)
 
         body_with_meta = {
             **data,
@@ -350,6 +377,13 @@ def call_rpc(
                 response = result.get(timeout=timeout)
 
             execution_time = time.time() - start_time
+            get_metrics_collector().record_rpc_call(
+                topic,
+                execution_time,
+                task_id=message_id,
+                metadata={"side": "client"},
+            )
+            set_publish_span_attributes(topic, message_id=message_id, is_rpc=True)
             logger.info(
                 f"RPC call {message_id} completed in {execution_time:.2f} seconds",
                 extra={

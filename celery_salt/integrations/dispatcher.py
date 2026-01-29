@@ -6,6 +6,7 @@ Maintains protocol compatibility with tchu-tchu.
 """
 
 import json
+import time
 from typing import Any
 
 from pydantic import BaseModel
@@ -18,10 +19,13 @@ from celery_salt.core.versioning import (
 from celery_salt.integrations.registry import get_handler_registry
 from celery_salt.logging.handlers import (
     get_logger,
+    log_dispatch_completed,
     log_error,
     log_handler_executed,
     log_message_received,
 )
+from celery_salt.metrics.collectors import get_metrics_collector
+from celery_salt.observability.opentelemetry import set_dispatch_span_attributes
 from celery_salt.utils.json_encoder import loads_message
 
 logger = get_logger(__name__)
@@ -61,7 +65,11 @@ def create_topic_dispatcher(
             routing_key = self.request.get("routing_key", "unknown")
 
         message_id = self.request.id
+        started_at = time.perf_counter()
         log_message_received(logger, routing_key, message_id)
+
+        metrics = get_metrics_collector()
+        metrics.record_message_received(routing_key, task_id=message_id)
 
         try:
             # Deserialize message
@@ -74,9 +82,10 @@ def create_topic_dispatcher(
             else:
                 deserialized = message_body
 
-            # Extract message type and version from _tchu_meta
+            # Extract message type, version, and correlation_id from _tchu_meta
             # Protocol compatibility: Handle both celery-salt and tchu-tchu messages
             message_version = None
+            correlation_id = None
             if "_tchu_meta" not in deserialized:
                 # No metadata = old 2.x message or tchu-tchu message, default to direct call
                 is_rpc = True
@@ -87,6 +96,7 @@ def create_topic_dispatcher(
                 tchu_meta = deserialized["_tchu_meta"]
                 is_rpc = tchu_meta.get("is_rpc", False)
                 message_version = tchu_meta.get("version")
+                correlation_id = tchu_meta.get("correlation_id")
 
             # Get all matching handlers for this routing key
             all_handlers = registry.get_handlers(routing_key)
@@ -136,6 +146,26 @@ def create_topic_dispatcher(
                     handlers.append(handler_info)
 
             if not handlers:
+                duration_seconds = time.perf_counter() - started_at
+                metrics.record_error(routing_key, "no_handlers", task_id=message_id)
+                set_dispatch_span_attributes(
+                    routing_key,
+                    task_id=message_id,
+                    is_rpc=is_rpc,
+                    handlers_executed=0,
+                    duration_seconds=duration_seconds,
+                    status="no_handlers",
+                )
+                log_dispatch_completed(
+                    logger,
+                    routing_key,
+                    message_id,
+                    duration_seconds,
+                    is_rpc=False,
+                    handlers_executed=0,
+                    status="no_handlers",
+                    correlation_id=correlation_id,
+                )
                 logger.warning(
                     f"No local handlers found for routing key '{routing_key}'",
                     extra={"routing_key": routing_key},
@@ -231,6 +261,12 @@ def create_topic_dispatcher(
                         )
 
                 except Exception as e:
+                    metrics.record_error(
+                        routing_key,
+                        type(e).__name__,
+                        task_id=message_id,
+                        metadata={"handler": handler_name},
+                    )
                     log_error(
                         logger, f"Handler '{handler_name}' failed", e, routing_key
                     )
@@ -242,6 +278,33 @@ def create_topic_dispatcher(
                         }
                     )
 
+            duration_seconds = time.perf_counter() - started_at
+            if is_rpc:
+                metrics.record_rpc_call(
+                    routing_key,
+                    duration_seconds,
+                    task_id=message_id,
+                    metadata={"handlers_executed": len(results)},
+                )
+            set_dispatch_span_attributes(
+                routing_key,
+                task_id=message_id,
+                is_rpc=is_rpc,
+                handlers_executed=len(results),
+                duration_seconds=duration_seconds,
+                status="completed",
+            )
+            log_dispatch_completed(
+                logger,
+                routing_key,
+                message_id,
+                duration_seconds,
+                is_rpc,
+                len(results),
+                status="completed",
+                correlation_id=correlation_id,
+            )
+
             return {
                 "status": "completed",
                 "routing_key": routing_key,
@@ -251,6 +314,19 @@ def create_topic_dispatcher(
             }
 
         except Exception as e:
+            duration_seconds = time.perf_counter() - started_at
+            metrics.record_error(
+                routing_key,
+                type(e).__name__,
+                task_id=message_id,
+            )
+            set_dispatch_span_attributes(
+                routing_key,
+                task_id=message_id,
+                is_rpc=False,
+                duration_seconds=duration_seconds,
+                status="error",
+            )
             log_error(
                 logger, f"Failed to dispatch event for '{routing_key}'", e, routing_key
             )
