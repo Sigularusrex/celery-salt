@@ -80,6 +80,26 @@ class TestSaltEventRealFunctionality:
         }
         assert event.payload["email"] == "user@example.com"
 
+    def test_event_direct_attribute_access(self):
+        """Test that schema fields are accessible directly on the event (evt.id)."""
+
+        class MyNewEvent(SaltEvent):
+            class Schema(BaseModel):
+                id: int
+                name: str
+
+            class Meta:
+                topic = "my.new.event"
+
+        evt = MyNewEvent(id=42, name="test")
+        assert evt.id == 42
+        assert evt.name == "test"
+        assert evt.data.id == 42
+        assert evt.data.name == "test"
+        # Missing attribute raises AttributeError
+        with pytest.raises(AttributeError):
+            _ = evt.nonexistent_field
+
     def test_event_schema_registration(self):
         """Test that event schema is actually registered to registry."""
 

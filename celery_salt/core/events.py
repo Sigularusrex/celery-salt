@@ -83,6 +83,14 @@ class SaltEvent(ABC):
         """
         self.data = self.Schema(**kwargs)
 
+    def __getattr__(self, name: str) -> Any:
+        """
+        Proxy attribute access to the event payload (Schema instance).
+
+        Allows direct access to schema fields, e.g. event.id instead of event.data.id.
+        """
+        return getattr(self.data, name)
+
     @property
     def payload(self) -> dict[str, Any]:
         """
