@@ -1,9 +1,12 @@
 """Django model decorators for automatic event publishing."""
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from celery_salt.logging.handlers import get_logger
+
+if TYPE_CHECKING:
+    from celery_salt.integrations.client import TchuClient
 
 logger = get_logger(__name__)
 
@@ -22,6 +25,7 @@ def auto_publish(
     include_fields: list[str] | None = None,
     exclude_fields: list[str] | None = None,
     publish_on: list[str] | None = None,
+    client: "TchuClient | None" = None,
     condition: Callable | None = None,
     event_classes: dict[str, type] | None = None,
     context_provider: Callable | None = None,
@@ -49,6 +53,7 @@ def auto_publish(
 
         # Raw mode:
         topic_prefix: Prefix for topics (default: app_label.model_name)
+        client: Optional TchuClient (uses default app if None)
 
         # Both modes:
         condition: Function to conditionally publish: (instance, event_type) -> bool
@@ -106,8 +111,9 @@ def auto_publish(
 
             # Not needed for event class mode
             base_topic = None
+            event_client = None
         else:
-            # Raw event mode - need topic prefix
+            # Raw event mode - need topic prefix and optional client
             events_to_publish = publish_on or ["created", "updated", "deleted"]
 
             # Generate topic prefix
@@ -115,6 +121,13 @@ def auto_publish(
                 base_topic = f"{app_label}.{model_name}"
             else:
                 base_topic = f"{topic_prefix}.{model_name}"
+
+            if client is not None:
+                event_client = client
+            else:
+                from celery_salt.integrations.client import TchuClient
+
+                event_client = TchuClient()
 
         def get_model_data(
             instance: models.Model, fields_changed: list[str] | None = None
@@ -209,11 +222,9 @@ def auto_publish(
                         extra={"topic": event_instance.topic, "model_pk": instance.pk},
                     )
                 else:
-                    # Raw mode: publish directly with generated topic
-                    from celery_salt.integrations.producer import publish_event
-
+                    # Raw mode: publish via client or producer
                     topic = f"{base_topic}.{event_type}"
-                    publish_event(topic=topic, data=data)
+                    event_client.publish(topic, data)
 
                     logger.info(
                         f"Published {event_type} event for {model_class.__name__}",
@@ -262,6 +273,7 @@ def auto_publish(
             "include_fields": include_fields,
             "exclude_fields": exclude_fields,
             "publish_on": events_to_publish,
+            "client": event_client if not event_classes else None,
             "condition": condition,
             "event_classes": event_classes,
             "context_provider": context_provider,

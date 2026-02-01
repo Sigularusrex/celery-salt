@@ -7,6 +7,7 @@ and automatic retries while maintaining the familiar Celery developer experience
 
 from celery_salt.core import RPCError, event, subscribe
 from celery_salt.core.events import SaltEvent, SaltResponse
+from celery_salt.integrations.client import TchuClient
 from celery_salt.integrations.dispatcher import (
     create_topic_dispatcher,
     get_subscribed_routing_keys,
@@ -22,6 +23,7 @@ __all__ = [
     "SaltEvent",
     "SaltResponse",
     "RPCError",
+    "TchuClient",
     "create_topic_dispatcher",
     "get_subscribed_routing_keys",
     "DEFAULT_EXCHANGE_NAME",
