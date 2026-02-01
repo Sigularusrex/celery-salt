@@ -184,16 +184,17 @@ class SaltEvent(ABC):
         Only valid for events with mode="rpc".
 
         Args:
-            data: Optional dict or value to use as response (e.g. serializer.data).
-                If a dict, passed as Response(**data); otherwise Response.model_validate(data).
+            data: Optional dict, list, or value to use as response (e.g. serializer.data).
+                Validated via Response.model_validate(data); invalid data raises ValidationError.
             **kwargs: Field values for the Response schema (e.g. result=42, operation="add").
                 Ignored if data is provided.
 
         Returns:
-            Response: Validated Pydantic model instance (event.Response)
+            Response: Validated Pydantic model instance (self.Response)
 
         Raises:
             ValueError: If called on a non-RPC event
+            ValidationError: If data does not match the Response schema (e.g. extra keys when extra="forbid")
 
         Example:
             return event.respond(serializer.data)
@@ -204,8 +205,6 @@ class SaltEvent(ABC):
                 f"respond() is only for RPC events; {self.Meta.topic} has mode={self.Meta.mode!r}"
             )
         if data is not None:
-            if isinstance(data, dict):
-                return self.Response(**{**data, **kwargs})
             return self.Response.model_validate(data)
         return self.Response(**kwargs)
 
