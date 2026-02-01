@@ -118,7 +118,7 @@ If you use Django:
    Add `'celery_salt.django'` to `INSTALLED_APPS` and set `CELERY_APP = "myproject.celery:app"` in settings. Then `.publish()` and `.call()` work from views with no extra code.
 
 2. **Configure the worker**  
-   In your `celery.py`, call `setup_celery_queue(app, queue_name="my_queue", subscriber_modules=[...])` so the dispatcher task is bound to your queue and `@subscribe` handlers.
+   In your `celery.py`, call `setup_salt_queue(app, queue_name="my_queue")`. If your app uses `Celery(..., include=[...])`, that same list is used for subscriber modules; otherwise pass `subscriber_modules=[...]`.
 
 3. **Optional: auto-publish on model save/delete**  
    Use the `@auto_publish` decorator on a Django model to publish events on create/update/delete.

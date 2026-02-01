@@ -14,17 +14,17 @@ from celery_salt.logging.handlers import get_logger
 logger = get_logger(__name__)
 
 
-def setup_celery_queue(
+def setup_salt_queue(
     celery_app,
     queue_name: str,
-    subscriber_modules: list[str],
+    subscriber_modules: list[str] | None = None,
     exchange_name: str = "tchu_events",
     exchange_type: str = "topic",
     durable: bool = True,
     auto_delete: bool = False,
 ) -> None:
     """
-    Set up Celery queue with tchu-tchu event handlers for Django apps.
+    Set up Salt queue (topic exchange, dispatcher, bindings) for celery-salt event handlers.
 
     This helper function handles all the boilerplate of:
     1. Importing subscriber modules (deferred until worker is ready)
@@ -40,33 +40,27 @@ def setup_celery_queue(
     database access during initialization.
 
     Usage:
-        # In your celery.py
-        import django
-        django.setup()
-
+        # In your celery.py - list once in include, pass queue_name only
         from celery import Celery
-        app = Celery("my_app")
+        app = Celery("my_app", include=["app1.subscribers", "app2.subscribers"])
         app.config_from_object("django.conf:settings", namespace="CELERY")
 
-        from celery_salt.django import setup_celery_queue
-        setup_celery_queue(
-            app,
-            queue_name="my_queue",
-            subscriber_modules=[
-                "app1.subscribers",
-                "app2.subscribers",
-            ]
-        )
+        from celery_salt.django import setup_salt_queue
+        setup_salt_queue(app, queue_name="my_queue")
 
     Args:
         celery_app: Celery app instance
         queue_name: Name of the queue (e.g., "acme_queue", "pulse_queue")
-        subscriber_modules: List of module paths containing @subscribe decorators
+        subscriber_modules: Module paths containing @subscribe decorators.
+            If not provided, uses celery_app.conf.include (same as Celery(include=[...])).
         exchange_name: RabbitMQ exchange name (default: "tchu_events")
         exchange_type: Exchange type (default: "topic")
         durable: Whether queue is durable (default: True)
         auto_delete: Whether queue auto-deletes (default: False)
     """
+    if subscriber_modules is None:
+        subscriber_modules = getattr(celery_app.conf, "include", None) or []
+
     # Create topic exchange (no database access needed)
     tchu_exchange = Exchange(exchange_name, type=exchange_type, durable=durable)
 
