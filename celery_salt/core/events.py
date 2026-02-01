@@ -174,7 +174,7 @@ class SaltEvent(ABC):
             return response
         return response
 
-    def respond(self, **kwargs) -> Any:
+    def respond(self, data: Any = None, **kwargs) -> Any:
         """
         Build a validated success response for RPC handlers.
 
@@ -184,18 +184,29 @@ class SaltEvent(ABC):
         Only valid for events with mode="rpc".
 
         Args:
-            **kwargs: Field values for the Response schema (e.g. result=42, operation="add")
+            data: Optional dict or value to use as response (e.g. serializer.data).
+                If a dict, passed as Response(**data); otherwise Response.model_validate(data).
+            **kwargs: Field values for the Response schema (e.g. result=42, operation="add").
+                Ignored if data is provided.
 
         Returns:
             Response: Validated Pydantic model instance (event.Response)
 
         Raises:
             ValueError: If called on a non-RPC event
+
+        Example:
+            return event.respond(serializer.data)
+            return event.respond(documents=[...], total=5)
         """
         if self.Meta.mode != "rpc":
             raise ValueError(
                 f"respond() is only for RPC events; {self.Meta.topic} has mode={self.Meta.mode!r}"
             )
+        if data is not None:
+            if isinstance(data, dict):
+                return self.Response(**{**data, **kwargs})
+            return self.Response.model_validate(data)
         return self.Response(**kwargs)
 
     def publish(self, broker_url: str | None = None, **kwargs) -> str:

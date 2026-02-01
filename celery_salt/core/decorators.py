@@ -499,9 +499,14 @@ def subscribe(
             try:
                 validated = validation_model(**raw_data)
             except ValidationError as e:
-                logger.error(f"Validation failed for topic '{resolved_topic}' (handler {func.__name__}): {e}")
+                logger.error(
+                    f"Validation failed for topic '{resolved_topic}' (handler {func.__name__}): {e}"
+                )
                 raise EventValidationError(
-                    str(e), topic=resolved_topic, handler_name=func.__name__, validation_error=e
+                    str(e),
+                    topic=resolved_topic,
+                    handler_name=func.__name__,
+                    validation_error=e,
                 ) from e
 
             # Call handler with validated data
