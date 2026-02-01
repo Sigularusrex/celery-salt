@@ -5,6 +5,16 @@ All notable changes to CelerySalt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2026-02-01
+
+### Added
+- **SaltResponse**: `event.call()` now returns a `SaltResponse` wrapper (not the raw Pydantic model), mirroring the SaltEvent API. Use `response.event`, `response.data`, `response.payload`, and attribute access (e.g. `response.result`, `response.root`) for RPC responses.
+- **SaltEvent.response_payload(response)**: Returns the RPC response as a JSON-serializable dict or list. For `RootModel[list[...]]` Response schemas, returns the bare list (array of dicts) for DRF/JsonResponse.
+- **MessageJSONEncoder**: Pydantic `BaseModel` instances (e.g. RPC Response/Error) are now serialized as dicts when using the package JSON encoder.
+
+### Documentation
+- [EVENT_CLASS_UNIFIED_API.md](./docs/EVENT_CLASS_UNIFIED_API.md): Design doc for unified API — subscribe with SaltEvent class → receive SaltEvent instance; call RPC → receive SaltResponse with `.payload` and attribute access. Includes comparison with FastStream.
+
 ## [1.4.3] - 2026-01-29
 
 ### Changed

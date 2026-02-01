@@ -21,6 +21,39 @@ from celery_salt.logging.handlers import get_logger
 logger = get_logger(__name__)
 
 
+class SaltResponse:
+    """
+    Wrapper for an RPC response, mirroring the SaltEvent API.
+
+    Returned by ``event.call()`` so you can use ``.payload`` and attribute
+    access like with the event instance (e.g. ``event.payload`` for the request).
+
+    Attributes:
+        event: The SaltEvent instance that made the call.
+        data: The validated Response or Error (Pydantic model).
+    """
+
+    __slots__ = ("event", "data")
+
+    def __init__(self, event: "SaltEvent", data: Any) -> None:
+        self.event = event
+        self.data = data
+
+    @property
+    def payload(self) -> dict[str, Any] | list[Any] | Any:
+        """
+        Return the response as a JSON-serializable dict or list.
+
+        Use this for DRF ``Response(...)``, ``JsonResponse(...)``, etc.
+        For ``RootModel[list[...]]`` responses, this is the bare list (array of dicts).
+        """
+        return self.event.response_payload(self.data)
+
+    def __getattr__(self, name: str) -> Any:
+        """Proxy attribute access to the response data (e.g. response.result, response.root)."""
+        return getattr(self.data, name)
+
+
 class SaltEvent(ABC):
     """
     Base class for all CelerySalt events.
@@ -109,6 +142,38 @@ class SaltEvent(ABC):
         """
         return self.data.model_dump(**kwargs)
 
+    def response_payload(self, response: Any) -> dict[str, Any] | list[Any] | Any:
+        """
+        Return the RPC response as a JSON-serializable dict or list.
+
+        Use this like ``payload`` for the request: after ``response = event.call()``
+        (or in a handler after building a response), call
+        ``event.response_payload(response)`` or use ``response.payload`` on a
+        SaltResponse instance.
+
+        - For a normal Response schema: returns the same as ``response.model_dump()``.
+        - For a ``RootModel[list[...]]`` response: returns the bare list (array of
+          dicts), so you get a JSON array without a wrapping ``{"root": [...]}``.
+
+        Only valid for events with ``mode="rpc"``.
+        """
+        if self.Meta.mode != "rpc":
+            raise ValueError(
+                f"response_payload() is only for RPC events; "
+                f"{self.Meta.topic} has mode={self.Meta.mode!r}"
+            )
+        if response is None:
+            return response
+        if isinstance(response, BaseModel):
+            dumped = response.model_dump()
+            # RootModel dumps as {"root": ...}; return bare root for API use
+            if isinstance(dumped, dict) and list(dumped.keys()) == ["root"]:
+                return dumped["root"]
+            return dumped
+        if isinstance(response, dict):
+            return response
+        return response
+
     def respond(self, **kwargs) -> Any:
         """
         Build a validated success response for RPC handlers.
@@ -183,7 +248,9 @@ class SaltEvent(ABC):
             **kwargs: Optional call options
 
         Returns:
-            Response or Error instance (Pydantic model)
+            SaltResponse: Wrapper with ``.event``, ``.data`` (Response/Error model),
+                and ``.payload`` (JSON-serializable dict/list). Attribute access
+                (e.g. ``response.result``, ``response.root``) is proxied to ``.data``.
 
         Raises:
             RPCTimeoutError: If response not received within timeout
@@ -205,7 +272,7 @@ class SaltEvent(ABC):
         )
 
         # Use shared utility for validation, RPC call, and response validation
-        return validate_and_call_rpc(
+        raw = validate_and_call_rpc(
             topic=self.Meta.topic,
             data=self.to_dict(),
             schema_model=self.Schema,
@@ -216,6 +283,7 @@ class SaltEvent(ABC):
             version=self.Meta.version,
             **kwargs,
         )
+        return SaltResponse(event=self, data=raw)
 
     @classmethod
     def __init_subclass__(cls, **kwargs):

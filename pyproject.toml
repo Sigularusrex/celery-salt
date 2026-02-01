@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "celery-salt"
-version = "1.4.3"
+version = "1.4.4"
 description = "Event-driven architecture library for Python that extends Celery with event publishing/subscribing patterns"
 authors = ["David Sigley <djsigley@gmail.com>"]
 license = "MIT"

@@ -77,9 +77,10 @@ class CalculatorAddError:
 def handle_add(data: CalculatorAddRequest) -> CalculatorAddResponse:
     return CalculatorAddResponse(result=data.a + data.b, operation="add")
 
-# Client call
+# Client call (returns SaltResponse: .event, .data, .payload, attribute access)
 response = CalculatorAddRequest.call(a=10, b=5, timeout=10)
 print(f"Result: {response.result}")  # 15.0
+# For DRF/JsonResponse: use response.payload (JSON-serializable dict/list)
 ```
 
 ## Architecture
@@ -97,6 +98,7 @@ Publisher → RabbitMQ Exchange (tchu_events) → Subscribers
 
 - **Examples**: [./examples/](./examples/)
 - **Docs**: [./docs/](./docs/)
+- **Unified API (SaltEvent / SaltResponse)**: [./docs/EVENT_CLASS_UNIFIED_API.md](./docs/EVENT_CLASS_UNIFIED_API.md)
 - **Typing subscriber payloads**: [./docs/TYPING_SUBSCRIBER_EVENTS.md](./docs/TYPING_SUBSCRIBER_EVENTS.md)
 
 ## Requirements
