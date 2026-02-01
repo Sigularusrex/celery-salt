@@ -22,6 +22,7 @@ from celery_salt.logging.handlers import (
     log_dispatch_completed,
     log_error,
     log_handler_executed,
+    log_handler_started,
     log_message_received,
 )
 from celery_salt.metrics.collectors import get_metrics_collector
@@ -66,7 +67,6 @@ def create_topic_dispatcher(
 
         message_id = self.request.id
         started_at = time.perf_counter()
-        log_message_received(logger, routing_key, message_id)
 
         metrics = get_metrics_collector()
         metrics.record_message_received(routing_key, task_id=message_id)
@@ -97,6 +97,11 @@ def create_topic_dispatcher(
                 is_rpc = tchu_meta.get("is_rpc", False)
                 message_version = tchu_meta.get("version")
                 correlation_id = tchu_meta.get("correlation_id")
+
+            log_message_received(
+                logger, routing_key, message_id,
+                correlation_id=correlation_id, is_rpc=is_rpc,
+            )
 
             # Get all matching handlers for this routing key
             all_handlers = registry.get_handlers(routing_key)
@@ -179,6 +184,12 @@ def create_topic_dispatcher(
                 handler_name = handler_info["name"]
                 handler_id = handler_info["id"]
 
+                log_handler_started(
+                    logger, handler_name, routing_key, message_id,
+                    correlation_id=correlation_id,
+                )
+                handler_started_at = time.perf_counter()
+
                 try:
                     if is_rpc:
                         # RPC: Must call directly (synchronously) to return result to caller
@@ -234,8 +245,10 @@ def create_topic_dispatcher(
                                 "result": result,
                             }
                         )
+                        handler_duration = time.perf_counter() - handler_started_at
                         log_handler_executed(
-                            logger, handler_name, routing_key, message_id
+                            logger, handler_name, routing_key, message_id,
+                            duration_seconds=handler_duration,
                         )
                     else:
                         # Broadcast: Dispatch as async Celery task
@@ -268,7 +281,8 @@ def create_topic_dispatcher(
                         metadata={"handler": handler_name},
                     )
                     log_error(
-                        logger, f"Handler '{handler_name}' failed", e, routing_key
+                        logger, f"Handler '{handler_name}' failed", e,
+                        topic=routing_key, task_id=message_id,
                     )
                     results.append(
                         {

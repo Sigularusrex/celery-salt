@@ -46,10 +46,37 @@ def log_message_published(
 
 
 def log_message_received(
-    logger: logging.Logger, topic: str, task_id: str | None = None
+    logger: logging.Logger,
+    topic: str,
+    task_id: str | None = None,
+    correlation_id: str | None = None,
+    is_rpc: bool | None = None,
 ) -> None:
     """Log a message reception event (DEBUG to reduce INFO noise)."""
-    logger.debug("Message received", extra={"topic": topic, "task_id": task_id})
+    extra: dict[str, str | bool | None] = {"topic": topic, "task_id": task_id}
+    if correlation_id is not None:
+        extra["correlation_id"] = correlation_id
+    if is_rpc is not None:
+        extra["is_rpc"] = is_rpc
+    logger.debug("Message received", extra=extra)
+
+
+def log_handler_started(
+    logger: logging.Logger,
+    handler_name: str,
+    topic: str,
+    task_id: str | None = None,
+    correlation_id: str | None = None,
+) -> None:
+    """Log when a handler is about to run (DEBUG for tracing)."""
+    extra: dict[str, str | None] = {
+        "handler": handler_name,
+        "topic": topic,
+        "task_id": task_id,
+    }
+    if correlation_id is not None:
+        extra["correlation_id"] = correlation_id
+    logger.debug("Handler started", extra=extra)
 
 
 def log_handler_executed(
@@ -57,11 +84,19 @@ def log_handler_executed(
     handler_name: str,
     topic: str,
     task_id: str | None = None,
+    duration_seconds: float | None = None,
 ) -> None:
     """Log a handler execution event (DEBUG to reduce INFO noise)."""
+    extra: dict[str, str | float | None] = {
+        "handler": handler_name,
+        "topic": topic,
+        "task_id": task_id,
+    }
+    if duration_seconds is not None:
+        extra["duration_seconds"] = duration_seconds
     logger.debug(
         "Handler executed successfully",
-        extra={"handler": handler_name, "topic": topic, "task_id": task_id},
+        extra=extra,
     )
 
 

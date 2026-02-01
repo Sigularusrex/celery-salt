@@ -167,9 +167,14 @@ def publish_event(
                 topic, task_id=message_id, metadata={"transport": "kombu"}
             )
             set_publish_span_attributes(topic, message_id=message_id, is_rpc=is_rpc)
+            _log_extra = {"routing_key": topic, "message_id": message_id}
+            if correlation_id:
+                _log_extra["correlation_id"] = correlation_id
+            if version:
+                _log_extra["version"] = version
             logger.info(
                 f"Published message {message_id} to routing key '{topic}' (via kombu)",
-                extra={"routing_key": topic, "message_id": message_id},
+                extra=_log_extra,
             )
 
             return message_id
@@ -198,9 +203,14 @@ def publish_event(
                     set_publish_span_attributes(
                         topic, message_id=message_id, is_rpc=is_rpc
                     )
+                    _log_extra = {"routing_key": topic, "message_id": message_id}
+                    if correlation_id:
+                        _log_extra["correlation_id"] = correlation_id
+                    if version:
+                        _log_extra["version"] = version
                     logger.info(
                         f"Published message {message_id} to routing key '{topic}' (via Celery)",
-                        extra={"routing_key": topic, "message_id": message_id},
+                        extra=_log_extra,
                     )
                     return message_id
 
@@ -244,9 +254,14 @@ def publish_event(
             topic, task_id=message_id, metadata={"transport": "kombu_serverless"}
         )
         set_publish_span_attributes(topic, message_id=message_id, is_rpc=is_rpc)
+        _log_extra = {"routing_key": topic, "message_id": message_id}
+        if correlation_id:
+            _log_extra["correlation_id"] = correlation_id
+        if version:
+            _log_extra["version"] = version
         logger.info(
             f"Published message {message_id} to routing key '{topic}' (via kombu/serverless)",
-            extra={"routing_key": topic, "message_id": message_id},
+            extra=_log_extra,
         )
 
         return message_id
@@ -392,9 +407,14 @@ def call_rpc(
             task_id=message_id,
         )
 
+        _log_extra = {"routing_key": topic, "message_id": message_id}
+        if correlation_id:
+            _log_extra["correlation_id"] = correlation_id
+        if version:
+            _log_extra["version"] = version
         logger.info(
             f"RPC call {message_id} sent to routing key '{topic}'",
-            extra={"routing_key": topic, "message_id": message_id},
+            extra=_log_extra,
         )
 
         try:

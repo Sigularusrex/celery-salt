@@ -37,6 +37,10 @@ class CelerySaltFormatter(logging.Formatter):
         if hasattr(record, "task_id"):
             log_entry["task_id"] = record.task_id
 
+        # Add handler if available (per-handler logs)
+        if hasattr(record, "handler"):
+            log_entry["handler"] = record.handler
+
         # Add correlation_id if available
         if hasattr(record, "correlation_id"):
             log_entry["correlation_id"] = record.correlation_id
@@ -65,6 +69,8 @@ class CelerySaltFormatter(logging.Formatter):
             log_entry["handlers_executed"] = record.handlers_executed
         if hasattr(record, "status"):
             log_entry["status"] = record.status
+        if hasattr(record, "error_type"):
+            log_entry["error_type"] = record.error_type
 
         # Add any extra fields
         extra_fields = {}
@@ -90,12 +96,14 @@ class CelerySaltFormatter(logging.Formatter):
                 "message",
                 "topic",
                 "task_id",
+                "handler",
                 "correlation_id",
                 "execution_time",
                 "duration_seconds",
                 "is_rpc",
                 "handlers_executed",
                 "status",
+                "error_type",
                 "trace_id",
                 "span_id",
             }:

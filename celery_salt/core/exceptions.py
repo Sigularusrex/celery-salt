@@ -39,6 +39,33 @@ class TimeoutError(CelerySaltError):
     pass
 
 
+class EventValidationError(CelerySaltError):
+    """
+    Raised when incoming event payload fails schema validation (e.g. extra=forbid).
+
+    Includes topic and handler name so Celery task failures show which event/handler failed.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        topic: str,
+        handler_name: str,
+        validation_error: Exception | None = None,
+        details: dict | None = None,
+    ) -> None:
+        self.topic = topic
+        self.handler_name = handler_name
+        self.validation_error = validation_error
+        full_message = (
+            f"Event validation failed for topic '{topic}' (handler {handler_name}): {message}"
+        )
+        super().__init__(full_message, details or {})
+
+    def __str__(self) -> str:
+        return super().__str__()
+
+
 class RPCError(CelerySaltError):
     """
     Exception for RPC handler errors that return responses instead of raising.

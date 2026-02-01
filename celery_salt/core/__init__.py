@@ -4,6 +4,7 @@ from celery_salt.core.decorators import event, subscribe
 from celery_salt.core.events import SaltEvent, SaltResponse
 from celery_salt.core.exceptions import (
     CelerySaltError,
+    EventValidationError,
     PublishError,
     RPCError,
     SchemaConflictError,
@@ -20,6 +21,7 @@ __all__ = [
     "SaltEvent",
     "SaltResponse",
     "CelerySaltError",
+    "EventValidationError",
     "SchemaConflictError",
     "SchemaRegistryUnavailableError",
     "RPCError",

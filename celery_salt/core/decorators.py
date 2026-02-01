@@ -16,7 +16,7 @@ from celery_salt.core.event_utils import (
     validate_and_call_rpc,
     validate_and_publish,
 )
-from celery_salt.core.exceptions import RPCError
+from celery_salt.core.exceptions import EventValidationError, RPCError
 from celery_salt.core.registry import get_schema_registry
 from celery_salt.logging.handlers import get_logger
 
@@ -495,12 +495,14 @@ def subscribe(
             meta = raw_data.pop("_tchu_meta", {})
             is_rpc = meta.get("is_rpc", False)
 
-            # Validate data
+            # Validate data (include topic + handler in error so Celery UI shows which event failed)
             try:
                 validated = validation_model(**raw_data)
             except ValidationError as e:
-                logger.error(f"Validation failed for {topic}: {e}")
-                raise
+                logger.error(f"Validation failed for topic '{resolved_topic}' (handler {func.__name__}): {e}")
+                raise EventValidationError(
+                    str(e), topic=resolved_topic, handler_name=func.__name__, validation_error=e
+                ) from e
 
             # Call handler with validated data
             try:
@@ -508,7 +510,18 @@ def subscribe(
                 if resolved_event_cls is not None:
                     # Wrap the validated payload in a full event instance.
                     # Note: event_cls.__init__ validates using its Schema too.
-                    handler_arg = resolved_event_cls(**validated.model_dump())
+                    try:
+                        handler_arg = resolved_event_cls(**validated.model_dump())
+                    except ValidationError as e:
+                        logger.error(
+                            f"Event class validation failed for topic '{resolved_topic}' (handler {func.__name__}): {e}"
+                        )
+                        raise EventValidationError(
+                            str(e),
+                            topic=resolved_topic,
+                            handler_name=func.__name__,
+                            validation_error=e,
+                        ) from e
 
                 result = func(handler_arg)
             except RPCError as rpc_error:
