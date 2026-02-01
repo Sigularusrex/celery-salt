@@ -282,13 +282,23 @@ def _validate_rpc_response_with_models(
     if response is None:
         return response
 
-    # Check if response is a dict (from RPCError or handler return)
+    # If it's already a Pydantic model, return as-is
+    if isinstance(response, BaseModel):
+        return response
+
+    # Non-dict response (e.g. list from handler returning serializer.data)
+    # RootModel[list[...]] expects the value as root, not under "data"
     if not isinstance(response, dict):
-        # If it's already a Pydantic model, return as-is
-        if isinstance(response, BaseModel):
-            return response
-        # Otherwise, try to convert
-        response = response if isinstance(response, dict) else {"data": response}
+        if response_schema_model:
+            try:
+                return response_schema_model.model_validate(response)
+            except ValidationError as e:
+                logger.warning(
+                    f"Response validation failed for {topic}: {e}. "
+                    f"Returning raw response."
+                )
+                return response
+        return response
 
     # Check if it's an error response (has error_code)
     is_error = "error_code" in response or "error_message" in response

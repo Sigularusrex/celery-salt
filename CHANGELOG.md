@@ -5,6 +5,11 @@ All notable changes to CelerySalt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] - 2026-02-01
+
+### Fixed
+- RPC response validation when handler returns a list: use `model_validate(response)` for non-dict responses so `RootModel[list[...]]` Response schemas receive the list as the root value instead of being wrapped as `{"data": ...}`.
+
 ## [1.4.4] - 2026-02-01
 
 ### Added
