@@ -290,14 +290,7 @@ def _validate_rpc_response_with_models(
     # RootModel[list[...]] expects the value as root, not under "data"
     if not isinstance(response, dict):
         if response_schema_model:
-            try:
-                return response_schema_model.model_validate(response)
-            except ValidationError as e:
-                logger.warning(
-                    f"Response validation failed for {topic}: {e}. "
-                    f"Returning raw response."
-                )
-                return response
+            return response_schema_model.model_validate(response)
         return response
 
     # Check if it's an error response (has error_code)
@@ -306,26 +299,12 @@ def _validate_rpc_response_with_models(
     if is_error:
         # Validate against error schema if defined
         if error_schema_model:
-            try:
-                return error_schema_model(**response)
-            except ValidationError as e:
-                logger.warning(
-                    f"Error response validation failed for {topic}: {e}. "
-                    f"Returning raw response."
-                )
-                return response
+            return error_schema_model(**response)
         return response
     else:
         # Validate against success response schema if defined
         if response_schema_model:
-            try:
-                return response_schema_model(**response)
-            except ValidationError as e:
-                logger.warning(
-                    f"Response validation failed for {topic}: {e}. "
-                    f"Returning raw response."
-                )
-                return response
+            return response_schema_model(**response)
         return response
 
 
