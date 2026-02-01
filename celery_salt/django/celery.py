@@ -1,8 +1,7 @@
-"""Celery setup helper for Django + tchu-tchu integration."""
+"""Celery setup helper for worker queue and event handlers."""
 
 import importlib
 
-from celery import Celery as CeleryCelery
 from celery.signals import celeryd_after_setup, worker_ready
 from kombu import Exchange, Queue, binding
 
@@ -45,6 +44,7 @@ def setup_celery_queue(
         import django
         django.setup()
 
+        from celery import Celery
         app = Celery("my_app")
         app.config_from_object("django.conf:settings", namespace="CELERY")
 
@@ -174,96 +174,3 @@ def setup_celery_queue(
         f"Tchu-tchu setup registered for queue '{queue_name}' "
         "(bindings will be configured on worker startup)"
     )
-
-
-class Celery(CeleryCelery):
-    """
-    Extended Celery class with tchu-tchu integration.
-
-    This class extends the standard Celery app with tchu-tchu-specific
-    functionality, providing a cleaner API for Django projects.
-
-    Usage:
-        # In your celery.py
-        import django
-        django.setup()
-
-        from celery_salt.django import Celery
-
-        app = Celery("my_app")
-        app.config_from_object("django.conf:settings", namespace="CELERY")
-
-        # Configure message broker with tchu-tchu
-        app.message_broker(
-            queue_name="my_queue",
-            subscriber_modules=[
-                "app1.subscribers",
-                "app2.subscribers",
-            ]
-        )
-
-    All standard Celery functionality is preserved - this class simply
-    adds convenience methods for tchu-tchu integration.
-    """
-
-    def __init__(self, *args, **kwargs):
-        """Initialize extended Celery app and capture include parameter."""
-        # Capture include parameter before parent constructor processes it
-        self.tchu_include = kwargs.get("include", []) or []
-
-        # Call parent constructor
-        super().__init__(*args, **kwargs)
-
-    def message_broker(
-        self,
-        queue_name: str,
-        include: list[str] | None = None,
-        exchange_name: str = "tchu_events",
-        exchange_type: str = "topic",
-        durable: bool = True,
-        auto_delete: bool = False,
-    ) -> None:
-        """
-        Configure message broker with tchu-tchu event handling.
-
-        This is a convenience method that wraps setup_celery_queue(),
-        providing a more Pythonic API by attaching the setup logic
-        directly to the Celery app instance.
-
-        Args:
-            queue_name: Name of the queue (e.g., "acme_queue", "pulse_queue")
-            include: List of full module paths containing @subscribe decorators.
-                If not provided, uses Celery's 'include' parameter from constructor.
-                Matches Celery's naming convention for consistency.
-                Note: Full paths required (e.g., "app1.subscribers", not just "app1")
-            exchange_name: RabbitMQ exchange name (default: "tchu_events")
-            exchange_type: Exchange type (default: "topic")
-            durable: Whether queue is durable (default: True)
-            auto_delete: Whether queue auto-deletes (default: False)
-
-        Example:
-            # Explicit include modules (full paths)
-            app = Celery("my_app")
-            app.config_from_object("django.conf:settings", namespace="CELERY")
-            app.message_broker(
-                queue_name="my_queue",
-                include=["app1.subscribers", "app2.subscribers"]
-            )
-
-            # Auto-discover from Celery's include parameter (full paths)
-            app = Celery("my_app", include=["app1.subscribers", "app2.subscribers"])
-            app.config_from_object("django.conf:settings", namespace="CELERY")
-            app.message_broker(queue_name="my_queue")  # Uses app1.subscribers, app2.subscribers
-        """
-        # If include not provided, use stored include from Celery constructor
-        subscriber_modules = include if include is not None else self.tchu_include
-
-        setup_celery_queue(
-            celery_app=self,
-            queue_name=queue_name,
-            subscriber_modules=subscriber_modules,
-            exchange_name=exchange_name,
-            exchange_type=exchange_type,
-            durable=durable,
-            auto_delete=auto_delete,
-        )

@@ -108,6 +108,21 @@ Publisher → RabbitMQ Exchange (tchu_events) → Subscribers
 - RabbitMQ (message broker)
 - Redis (optional, required for RPC)
 
+**Django is optional.** The core library is Celery + Pydantic; events and validation do not require Django. Install with `pip install celery-salt[django]` only if you use the optional Django helpers below.
+
+### Django (optional)
+
+If you use Django:
+
+1. **Wire the Celery app**  
+   Add `'celery_salt.django'` to `INSTALLED_APPS` and set `CELERY_APP = "myproject.celery:app"` in settings. Then `.publish()` and `.call()` work from views with no extra code.
+
+2. **Configure the worker**  
+   In your `celery.py`, call `setup_celery_queue(app, queue_name="my_queue", subscriber_modules=[...])` so the dispatcher task is bound to your queue and `@subscribe` handlers.
+
+3. **Optional: auto-publish on model save/delete**  
+   Use the `@auto_publish` decorator on a Django model to publish events on create/update/delete.
+
 ## Examples
 
 See the [examples](./examples/) directory for complete working examples:

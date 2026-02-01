@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from typing import Any
 
-from celery_salt.integrations.client import TchuClient
 from celery_salt.logging.handlers import get_logger
 
 logger = get_logger(__name__)
@@ -23,7 +22,6 @@ def auto_publish(
     include_fields: list[str] | None = None,
     exclude_fields: list[str] | None = None,
     publish_on: list[str] | None = None,
-    client: TchuClient | None = None,
     condition: Callable | None = None,
     event_classes: dict[str, type] | None = None,
     context_provider: Callable | None = None,
@@ -49,9 +47,8 @@ def auto_publish(
         context_provider: Function to extract context from instance for serializers
                          Signature: (instance, event_type) -> Dict[str, Any]
 
-        # Raw mode (legacy):
+        # Raw mode:
         topic_prefix: Prefix for topics (default: app_label.model_name)
-        client: TchuClient instance (default: creates new)
 
         # Both modes:
         condition: Function to conditionally publish: (instance, event_type) -> bool
@@ -109,9 +106,8 @@ def auto_publish(
 
             # Not needed for event class mode
             base_topic = None
-            event_client = None
         else:
-            # Raw event mode - need topic and client
+            # Raw event mode - need topic prefix
             events_to_publish = publish_on or ["created", "updated", "deleted"]
 
             # Generate topic prefix
@@ -119,9 +115,6 @@ def auto_publish(
                 base_topic = f"{app_label}.{model_name}"
             else:
                 base_topic = f"{topic_prefix}.{model_name}"
-
-            # Create client
-            event_client = client or TchuClient()
 
         def get_model_data(
             instance: models.Model, fields_changed: list[str] | None = None
@@ -217,8 +210,10 @@ def auto_publish(
                     )
                 else:
                     # Raw mode: publish directly with generated topic
+                    from celery_salt.integrations.producer import publish_event
+
                     topic = f"{base_topic}.{event_type}"
-                    event_client.publish(topic, data)
+                    publish_event(topic=topic, data=data)
 
                     logger.info(
                         f"Published {event_type} event for {model_class.__name__}",
@@ -267,7 +262,6 @@ def auto_publish(
             "include_fields": include_fields,
             "exclude_fields": exclude_fields,
             "publish_on": events_to_publish,
-            "client": event_client,
             "condition": condition,
             "event_classes": event_classes,
             "context_provider": context_provider,

@@ -5,8 +5,12 @@ Maintains protocol compatibility with tchu-tchu by using the same
 exchange name and message format.
 
 Works with or without Celery - falls back to kombu for serverless environments.
+
+Django: Add 'celery_salt.django' to INSTALLED_APPS and set CELERY_APP = "myproject.celery:app"
+so .publish() and .call() work from views with no extra code.
 """
 
+import os
 import uuid
 from typing import Any
 
@@ -46,6 +50,43 @@ try:
     KOMBU_AVAILABLE = True
 except ImportError:
     KOMBU_AVAILABLE = False
+
+# Default Celery app (set by celery_salt.django AppConfig when CELERY_APP is in settings)
+_default_celery_app: Any | None = None
+
+
+def set_default_celery_app(app: Any | None) -> None:
+    """Set the default Celery app. Called by celery_salt.django AppConfig; rarely needed otherwise."""
+    global _default_celery_app
+    _default_celery_app = app
+
+
+def _resolve_app(celery_app: Any | None) -> Any | None:
+    """Resolve Celery app: explicit arg, then default (from Django AppConfig), then current_app."""
+    if celery_app is not None:
+        return celery_app
+    if _default_celery_app is not None:
+        return _default_celery_app
+    return current_app if CELERY_AVAILABLE else None
+
+
+def _resolve_broker_url(broker_url: str | None, app: Any | None) -> str | None:
+    """Resolve broker URL for kombu fallback: explicit, then app.conf, then env/settings."""
+    if broker_url:
+        return broker_url
+    if app is not None:
+        url = getattr(app.conf, "broker_url", None)
+        if url:
+            return url
+    url = os.environ.get("CELERY_SALT_BROKER_URL") or os.environ.get("BROKER_URL")
+    if url:
+        return url
+    try:
+        from django.conf import settings
+
+        return getattr(settings, "CELERY_BROKER_URL", None) or getattr(settings, "BROKER_URL", None)
+    except (ImportError, RuntimeError):
+        return None
 
 
 def publish_event(
@@ -134,51 +175,40 @@ def publish_event(
             return message_id
 
         # Try Celery (if available and no broker_url provided)
-        # Note: For Celery to work with topic exchanges, the app must be configured
-        # with task_routes that route the dispatcher task to the topic exchange.
-        # If not configured, we fall back to kombu.
-        if CELERY_AVAILABLE:
+        app = _resolve_app(celery_app)
+        if CELERY_AVAILABLE and app is not None:
             try:
-                app = celery_app or current_app
-                if app is not None:
-                    # Check if routing is configured for topic exchange
-                    # If task_routes has the dispatcher task configured with topic exchange, use Celery
-                    routes = getattr(app.conf, "task_routes", {})
-                    dispatcher_route = routes.get(dispatcher_task_name, {})
+                routes = getattr(app.conf, "task_routes", {})
+                dispatcher_route = routes.get(dispatcher_task_name, {})
 
-                    # If route is configured with topic exchange, use Celery
-                    if (
-                        dispatcher_route.get("exchange") == exchange_name
-                        and dispatcher_route.get("exchange_type") == "topic"
-                    ):
-                        # Send task - Celery will use the configured topic exchange
-                        app.send_task(
-                            dispatcher_task_name,
-                            args=[serialized_body],
-                            kwargs={"routing_key": topic},
-                            routing_key=topic,  # This will be used with the topic exchange
-                            task_id=message_id,
-                        )
+                if (
+                    dispatcher_route.get("exchange") == exchange_name
+                    and dispatcher_route.get("exchange_type") == "topic"
+                ):
+                    app.send_task(
+                        dispatcher_task_name,
+                        args=[serialized_body],
+                        kwargs={"routing_key": topic},
+                        routing_key=topic,
+                        task_id=message_id,
+                    )
+                    get_metrics_collector().record_message_published(
+                        topic, task_id=message_id, metadata={"transport": "celery"}
+                    )
+                    set_publish_span_attributes(
+                        topic, message_id=message_id, is_rpc=is_rpc
+                    )
+                    logger.info(
+                        f"Published message {message_id} to routing key '{topic}' (via Celery)",
+                        extra={"routing_key": topic, "message_id": message_id},
+                    )
+                    return message_id
 
-                        get_metrics_collector().record_message_published(
-                            topic, task_id=message_id, metadata={"transport": "celery"}
-                        )
-                        set_publish_span_attributes(
-                            topic, message_id=message_id, is_rpc=is_rpc
-                        )
-                        logger.info(
-                            f"Published message {message_id} to routing key '{topic}' (via Celery)",
-                            extra={"routing_key": topic, "message_id": message_id},
-                        )
-
-                        return message_id
-                    else:
-                        # Routing not configured for topic exchange, fall through to kombu
-                        logger.debug(
-                            f"Celery routing not configured for topic exchange, using kombu. "
-                            f"Configure task_routes for {dispatcher_task_name} to use topic exchange."
-                        )
-                        raise AttributeError("Topic exchange routing not configured")
+                logger.debug(
+                    f"Celery routing not configured for topic exchange, using kombu. "
+                    f"Configure task_routes for {dispatcher_task_name} to use topic exchange."
+                )
+                raise AttributeError("Topic exchange routing not configured")
             except (AttributeError, RuntimeError) as e:
                 # Celery app not available or routing not configured, fall through to kombu
                 logger.debug(
@@ -186,22 +216,23 @@ def publish_event(
                 )
                 pass
 
-        # Fallback to kombu for serverless environments
+        # Fallback to kombu (serverless or topic routing not configured)
         if not KOMBU_AVAILABLE:
             raise PublishError(
                 "Cannot publish: Celery not available and kombu not installed. "
                 "Install kombu for serverless support: pip install kombu"
             )
 
-        if broker_url is None:
+        resolved_broker_url = _resolve_broker_url(broker_url, app)
+        if resolved_broker_url is None:
             raise PublishError(
-                "broker_url required for serverless mode (no Celery app available). "
-                "Provide broker_url or configure Celery app."
+                "broker_url required for publish. "
+                "Django: add 'celery_salt.django' to INSTALLED_APPS and set CELERY_APP, "
+                "or set CELERY_BROKER_URL / CELERY_SALT_BROKER_URL."
             )
 
-        # Use kombu directly (serverless mode)
         _publish_via_kombu(
-            broker_url=broker_url,
+            broker_url=resolved_broker_url,
             exchange_name=exchange_name,
             routing_key=topic,
             message_body=serialized_body,
@@ -314,7 +345,7 @@ def call_rpc(
             "Install celery for RPC support: pip install celery"
         )
 
-    app = celery_app or current_app
+    app = _resolve_app(celery_app)
     if app is None:
         raise PublishError("Celery app required for RPC calls")
 
