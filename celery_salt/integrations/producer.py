@@ -10,6 +10,7 @@ Django: Add 'celery_salt.django' to INSTALLED_APPS and set CELERY_APP = "myproje
 so .publish() and .call() work from views with no extra code.
 """
 
+import json
 import os
 import uuid
 from typing import Any
@@ -126,6 +127,10 @@ def publish_event(
         PublishError: If publishing fails
     """
     try:
+        # Normalize data to JSON-serializable (datetime, UUID, etc. -> strings)
+        # so regular (broadcast) and RPC messages never hit "datetime is not JSON serializable"
+        data = json.loads(dumps_message(data))
+
         # Generate unique message ID
         message_id = str(uuid.uuid4())
 
@@ -365,6 +370,9 @@ def call_rpc(
         raise PublishError("Celery app required for RPC calls")
 
     try:
+        # Normalize data to JSON-serializable (datetime, UUID, etc. -> strings)
+        data = json.loads(dumps_message(data))
+
         # Generate unique message ID
         message_id = str(uuid.uuid4())
 

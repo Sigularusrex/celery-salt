@@ -27,7 +27,7 @@ from celery_salt.logging.handlers import (
 )
 from celery_salt.metrics.collectors import get_metrics_collector
 from celery_salt.observability.opentelemetry import set_dispatch_span_attributes
-from celery_salt.utils.json_encoder import loads_message
+from celery_salt.utils.json_encoder import dumps_message, loads_message
 
 logger = get_logger(__name__)
 
@@ -234,9 +234,12 @@ def create_topic_dispatcher(
 
                         # Result is already validated by the handler wrapper
                         # It may be a Pydantic model (response or error schema)
-                        # Convert to dict for serialization if needed
+                        # Convert to JSON-serializable dict so Celery result backend can store it
+                        # (datetime, UUID, etc. must become strings)
                         if isinstance(result, BaseModel):
-                            result = result.model_dump()
+                            result = result.model_dump(mode="json")
+                        else:
+                            result = json.loads(dumps_message(result))
 
                         results.append(
                             {
