@@ -293,6 +293,7 @@ def create_topic_dispatcher(
                     )
 
             duration_seconds = time.perf_counter() - started_at
+            handler_errors = sum(1 for r in results if r.get("status") == "error")
             if is_rpc:
                 metrics.record_rpc_call(
                     routing_key,
@@ -317,6 +318,7 @@ def create_topic_dispatcher(
                 len(results),
                 status="completed",
                 correlation_id=correlation_id,
+                handler_errors=handler_errors,
             )
 
             return {

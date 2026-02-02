@@ -435,6 +435,62 @@ def call_rpc(
                 metadata={"side": "client"},
             )
             set_publish_span_attributes(topic, message_id=message_id, is_rpc=True)
+
+            # Extract the actual result from the dispatcher response
+            if isinstance(response, dict):
+                # Check if there were no handlers
+                if response.get("status") == "no_handlers":
+                    logger.warning(
+                        f"RPC call {message_id} failed: no handlers for routing key '{topic}'",
+                        extra={
+                            "routing_key": topic,
+                            "message_id": message_id,
+                            "execution_time": execution_time,
+                        },
+                    )
+                    raise PublishError(f"No handlers found for routing key '{topic}'")
+
+                results = response.get("results", [])
+                if results:
+                    first_result = results[0]
+                    if first_result.get("status") == "success":
+                        logger.info(
+                            f"RPC call {message_id} completed in {execution_time:.2f} seconds",
+                            extra={
+                                "routing_key": topic,
+                                "message_id": message_id,
+                                "execution_time": execution_time,
+                            },
+                        )
+                        return first_result.get("result")
+                    else:
+                        error = first_result.get("error", "Unknown error")
+                        handler_name = first_result.get("handler", "unknown")
+                        logger.warning(
+                            f"RPC call {message_id} failed: handler '{handler_name}' raised: {error}",
+                            extra={
+                                "routing_key": topic,
+                                "message_id": message_id,
+                                "execution_time": execution_time,
+                                "handler": handler_name,
+                                "error": error,
+                            },
+                        )
+                        raise PublishError(f"Handler '{handler_name}' failed: {error}")
+                else:
+                    logger.warning(
+                        f"RPC call {message_id} failed: no results from handler for routing key '{topic}'",
+                        extra={
+                            "routing_key": topic,
+                            "message_id": message_id,
+                            "execution_time": execution_time,
+                        },
+                    )
+                    raise PublishError(
+                        f"No results returned from handler for routing key '{topic}'"
+                    )
+
+            # If response is not a dict, return it as-is (legacy)
             logger.info(
                 f"RPC call {message_id} completed in {execution_time:.2f} seconds",
                 extra={
@@ -443,29 +499,6 @@ def call_rpc(
                     "execution_time": execution_time,
                 },
             )
-
-            # Extract the actual result from the dispatcher response
-            if isinstance(response, dict):
-                # Check if there were no handlers
-                if response.get("status") == "no_handlers":
-                    raise PublishError(f"No handlers found for routing key '{topic}'")
-
-                # Extract results from the first successful handler
-                results = response.get("results", [])
-                if results:
-                    first_result = results[0]
-                    if first_result.get("status") == "success":
-                        return first_result.get("result")
-                    else:
-                        error = first_result.get("error", "Unknown error")
-                        handler_name = first_result.get("handler", "unknown")
-                        raise PublishError(f"Handler '{handler_name}' failed: {error}")
-                else:
-                    raise PublishError(
-                        f"No results returned from handler for routing key '{topic}'"
-                    )
-
-            # If response is not a dict, return it as-is
             return response
 
         except Exception as e:

@@ -109,8 +109,9 @@ def log_dispatch_completed(
     handlers_executed: int,
     status: str = "completed",
     correlation_id: str | None = None,
+    handler_errors: int = 0,
 ) -> None:
-    """Log a single observability event per dispatch (one line per task at INFO)."""
+    """Log a single observability event per dispatch (one line per task at INFO or WARNING)."""
     extra = {
         "topic": topic,
         "task_id": task_id,
@@ -121,10 +122,18 @@ def log_dispatch_completed(
     }
     if correlation_id:
         extra["correlation_id"] = correlation_id
-    logger.info(
-        "Dispatch completed",
-        extra=extra,
-    )
+    if handler_errors:
+        extra["handler_errors"] = handler_errors
+    if handler_errors and is_rpc:
+        logger.warning(
+            f"Dispatch completed ({handler_errors} handler(s) failed)",
+            extra=extra,
+        )
+    else:
+        logger.info(
+            "Dispatch completed",
+            extra=extra,
+        )
 
 
 def log_rpc_call(
