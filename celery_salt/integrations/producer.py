@@ -119,6 +119,7 @@ def publish_event(
         celery_app: Optional Celery app instance (uses current_app if None)
         dispatcher_task_name: Name of the dispatcher task
         broker_url: Optional broker URL for serverless mode (required if no Celery app)
+        **publish_kwargs: When using Celery, forwarded to send_task (e.g. priority=5, countdown=10, expires=60)
 
     Returns:
         Message ID for tracking
@@ -195,12 +196,17 @@ def publish_event(
                     dispatcher_route.get("exchange") == exchange_name
                     and dispatcher_route.get("exchange_type") == "topic"
                 ):
+                    # Forward publish_kwargs (e.g. priority, countdown, expires) to Celery
+                    send_options = {
+                        **publish_kwargs,
+                        "routing_key": topic,
+                        "task_id": message_id,
+                    }
                     app.send_task(
                         dispatcher_task_name,
                         args=[serialized_body],
                         kwargs={"routing_key": topic},
-                        routing_key=topic,
-                        task_id=message_id,
+                        **send_options,
                     )
                     get_metrics_collector().record_message_published(
                         topic, task_id=message_id, metadata={"transport": "celery"}
@@ -346,6 +352,8 @@ def call_rpc(
         celery_app: Optional Celery app instance (uses current_app if None)
         dispatcher_task_name: Name of the dispatcher task
         allow_join: Allow calling result.get() from within a task (default: False)
+        **call_kwargs: When using Celery, forwarded to send_task (e.g. priority=5, countdown=10).
+            version and correlation_id are used in the message body only, not sent to send_task.
 
     Returns:
         Response from the handler
@@ -407,12 +415,19 @@ def call_rpc(
             )
 
         # Send task to dispatcher and wait for result
+        # Forward Celery options (priority, countdown, expires, etc.); exclude our protocol kwargs
+        send_options = {
+            k: v
+            for k, v in call_kwargs.items()
+            if k not in ("version", "correlation_id")
+        }
+        send_options["routing_key"] = topic
+        send_options["task_id"] = message_id
         result = app.send_task(
             dispatcher_task_name,
             args=[serialized_body],
             kwargs={"routing_key": topic},
-            routing_key=topic,  # This will be used with the configured topic exchange
-            task_id=message_id,
+            **send_options,
         )
 
         _log_extra = {"routing_key": topic, "message_id": message_id}

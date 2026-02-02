@@ -5,6 +5,7 @@ These decorators provide a Pydantic-based API for defining and subscribing to ev
 with import-time schema registration for early error detection.
 """
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -19,6 +20,7 @@ from celery_salt.core.event_utils import (
 from celery_salt.core.exceptions import EventValidationError, RPCError
 from celery_salt.core.registry import get_schema_registry
 from celery_salt.logging.handlers import get_logger
+from celery_salt.utils.json_encoder import dumps_message
 
 logger = get_logger(__name__)
 
@@ -443,22 +445,23 @@ def subscribe(
             passing a `SaltEvent` subclass as the first argument), the handler
             will receive a constructed event instance (validated payload wrapped
             in the event class) instead of the raw validated payload model.
-        **celery_options: All Celery task options
-            - autoretry_for: Tuple of exceptions to retry
+        **celery_options: All Celery task options (passed to shared_task). Examples:
+            - priority: Task priority 0-9
+            - autoretry_for: Tuple of exceptions to retry (e.g. (Exception,) or (ConnectionError,))
             - max_retries: Maximum retry attempts
-            - retry_backoff: Enable exponential backoff
+            - retry_backoff: Enable exponential backoff (bool)
+            - retry_backoff_max_interval: Max seconds between retries
             - time_limit: Hard timeout (seconds)
             - soft_time_limit: Soft timeout (seconds)
-            - rate_limit: Rate limit (e.g., '100/m')
-            - priority: Task priority (0-9)
-            - etc.
+            - rate_limit: Rate limit (e.g. '100/m')
+            Any other Celery task option is forwarded to shared_task.
 
     Usage:
-        @subscribe("user.signup.completed", autoretry_for=(Exception,))
+        @subscribe("user.signup.completed", priority=5, autoretry_for=(Exception,), max_retries=3)
         def send_welcome_email(data: UserSignup):
             send_email(data.email)
 
-        @subscribe(UserSignupEvent)  # topic/version inferred from Meta
+        @subscribe(UserSignupEvent, priority=3)  # topic/version inferred from Meta
         def handler(evt: UserSignupEvent):
             do_something(evt.data.user_id)
     """
@@ -570,7 +573,12 @@ def subscribe(
 
                 return result
 
-            return None
+            # Broadcast: return result so Flower and result backend show it (normalize to JSON-serializable)
+            if result is None:
+                return None
+            if isinstance(result, BaseModel):
+                return result.model_dump(mode="json")
+            return json.loads(dumps_message(result))
 
         # 4. Register as Celery task
         from celery import shared_task

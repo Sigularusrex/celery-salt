@@ -47,6 +47,15 @@ def send_welcome(evt: UserSignup):
 
 So: **subscribe with event class → receive SaltEvent instance.** Property access and `.payload` work as above.
 
+### RPC handlers: `event.respond()` and Response validation
+
+When the handler is subscribed with a **SaltEvent** RPC event class, response validation uses that event’s nested **Response** class (e.g. `MyEvent.Response`). Handlers can return a validated response with `event.respond()`:
+
+- **`event.respond(data)`** — Pass a dict or list (e.g. `serializer.data`). Validated via `Response.model_validate(data)`; invalid data raises `ValidationError`.
+- **`event.respond(**kwargs)`** — Pass response fields by name (e.g. `event.respond(documents=[...], total=5)`).
+
+Empty list `[]` is valid for `RootModel[list[T]]` responses. Incorrect data (e.g. extra keys when Response has `extra="forbid"`) raises before the response is sent.
+
 ### Subscribing by topic string only
 
 If you use `@subscribe("user.signup")` **without** passing the event class, the handler receives only the **validated payload** (a Pydantic model created from the schema registry), not a full `UserSignup` instance. You get `.payload`-like data (the model’s fields) but not `.publish()`, `.data` as the event’s Schema, etc. See [TYPING_SUBSCRIBER_EVENTS.md](TYPING_SUBSCRIBER_EVENTS.md) for typing options in that case.
@@ -111,5 +120,6 @@ So: FastStream keeps **in/out as plain types** (Pydantic or built-ins). CelerySa
 ## Recommendation
 
 1. **Subscribe with the SaltEvent class** when you have it, so handlers always receive a SaltEvent instance (`event.<field>`, `event.payload`).
-2. **`event.call()` returns a SaltResponse** so callers get `response.payload` and attribute access, mirroring the event API.
-3. Keep the current behavior for “topic-only” subscribers (payload only) and document it; optional typing options remain as in TYPING_SUBSCRIBER_EVENTS.md.
+2. **RPC handlers:** Use `event.respond(data)` or `event.respond(**kwargs)`; validation uses the event's `Response` class and raises on invalid data.
+3. **`event.call()` returns a SaltResponse** so callers get `response.payload` and attribute access, mirroring the event API.
+4. Keep the current behavior for “topic-only” subscribers (payload only) and document it; optional typing options remain as in TYPING_SUBSCRIBER_EVENTS.md.

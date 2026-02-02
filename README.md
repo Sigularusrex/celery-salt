@@ -91,7 +91,7 @@ Publisher → RabbitMQ Exchange (tchu_events) → Subscribers
 
 - **Exchange**: `tchu_events` (topic exchange, protocol compatible)
 - **Routing**: Topic-based with wildcard support (`user.*`, `#`)
-- **Serialization**: JSON with Pydantic validation
+- **Serialization**: JSON with Pydantic validation; `datetime`, `UUID`, `Decimal`, etc. are normalized to JSON-safe types automatically
 - **Result Backend**: Redis (required for RPC)
 
 ## Documentation
@@ -100,6 +100,7 @@ Publisher → RabbitMQ Exchange (tchu_events) → Subscribers
 - **Docs**: [./docs/](./docs/)
 - **Unified API (SaltEvent / SaltResponse)**: [./docs/EVENT_CLASS_UNIFIED_API.md](./docs/EVENT_CLASS_UNIFIED_API.md)
 - **Typing subscriber payloads**: [./docs/TYPING_SUBSCRIBER_EVENTS.md](./docs/TYPING_SUBSCRIBER_EVENTS.md)
+- **Celery config (Django)**: [./docs/CELERY_CONFIG_TEMPLATE.md](./docs/CELERY_CONFIG_TEMPLATE.md)
 
 ## Requirements
 
@@ -163,11 +164,22 @@ response = CalculatorAddRequest.call(a=10, b=5, timeout=10)
 
 ### Subscribing to Events
 
+Handlers can use Celery task options (priority, retries, time limits, etc.) via `**celery_options`:
+
 ```python
-@subscribe("user.created")
+@subscribe("user.created", priority=5, autoretry_for=(Exception,), max_retries=3)
 def handle_user_created(data: UserCreated):
     # Process event
     pass
+```
+
+For **SaltEvent** class-based handlers, subscribe with the event class to receive a full event instance and use `event.respond()` for RPC:
+
+```python
+@subscribe(MyRpcEvent)
+def handle_my_rpc(evt: MyRpcEvent):
+    # evt is MyRpcEvent; return validated response via event.respond()
+    return evt.respond(serializer.data)  # or evt.respond(key=value, ...)
 ```
 
 ### RPC Response Validation

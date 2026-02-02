@@ -216,10 +216,8 @@ class SaltEvent(ABC):
 
         Args:
             broker_url: Optional broker URL
-            **kwargs: Optional publish options
-                - routing_key: Custom routing key
-                - priority: Message priority (0-10)
-                - expiration: Message expiration in ms
+            **kwargs: When using Celery, forwarded to send_task (e.g. countdown=10, expires=60).
+                For handler priority/retries, set on the handler via @subscribe(..., priority=5, autoretry_for=(Exception,)).
 
         Returns:
             str: Message ID for tracking
@@ -255,7 +253,8 @@ class SaltEvent(ABC):
 
         Args:
             timeout: Response timeout in seconds
-            **kwargs: Optional call options
+            **kwargs: When using Celery, forwarded to send_task (e.g. priority=5, countdown=10).
+                Handler retries/priority are set via @subscribe(..., autoretry_for=..., priority=...).
 
         Returns:
             SaltResponse: Wrapper with ``.event``, ``.data`` (Response/Error model),

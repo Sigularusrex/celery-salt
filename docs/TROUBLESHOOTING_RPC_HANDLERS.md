@@ -28,7 +28,7 @@ Run through this checklist to identify the issue:
 - [ ] **1. Is the handling service running on GCP?**
 - [ ] **2. Does the handler exist in the codebase?**
 - [ ] **3. Is the handler module being autodiscovered?**
-- [ ] **4. Is the service using tchu-tchu v2.2.11+?**
+- [ ] **4. Is the service using celery-salt with the dispatcher task registered?**
 - [ ] **5. Are queue bindings correct in RabbitMQ?**
 - [ ] **6. Are there any import errors in the service logs?**
 
@@ -59,7 +59,7 @@ For example:
 ```python
 # cs_pulse/subscribers/document_subscriber.py
 
-from tchu_tchu import subscribe
+from celery_salt import subscribe
 import logging
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,10 @@ The most common issue: **the module isn't being autodiscovered**.
 
 from celery import Celery
 from kombu import Exchange, Queue, binding
-from tchu_tchu import create_topic_dispatcher, get_subscribed_routing_keys
+from celery_salt.integrations.dispatcher import (
+    create_topic_dispatcher,
+    get_subscribed_routing_keys,
+)
 
 app = Celery("my_service")
 
@@ -128,7 +131,7 @@ app.conf.task_queues = (
 )
 
 app.conf.task_routes = {
-    "tchu_tchu.dispatch_event": {"queue": "my_service_queue"},
+    "celery_salt.dispatch_event": {"queue": "my_service_queue"},
 }
 
 # Create dispatcher
@@ -176,7 +179,7 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 
 ✅ **Success - Handler registered:**
 ```
-INFO:tchu_tchu.registry:Registered handler 'handle_document_list' for routing key 'rpc.cs_pulse.documents.document.list'
+Handler registration happens when subscriber modules are imported (via setup_salt_queue or Celery include).
 ```
 
 ❌ **Problem - Handler not found:**
@@ -218,7 +221,7 @@ tchu_events  exchange  cs_pulse_queue  queue  rpc.cs_pulse.users.validate  []
 
 ### Step 6: Delete Old Queues (If Necessary)
 
-If you recently updated to tchu-tchu v2.2.11 or changed handler routing keys:
+If you recently changed handler routing keys or subscriber modules:
 
 ```bash
 # Connect to RabbitMQ
@@ -279,14 +282,14 @@ def handle_document_list(data):
 ```python
 # In your service's views or a management command
 
-from tchu_tchu import get_registry
+from celery_salt.integrations.registry import get_handler_registry
 
 def debug_handlers(request):
     """Debug endpoint to check registered handlers."""
-    registry = get_registry()
+    registry = get_handler_registry()
     
     all_handlers = {}
-    for routing_key in registry.get_all_routing_keys_and_patterns():
+    for routing_key in registry.get_all_routing_keys():
         handlers = registry.get_handlers(routing_key)
         all_handlers[routing_key] = [
             {
@@ -478,7 +481,7 @@ rabbitmqctl list_bindings | grep "rpc.cs_pulse.documents.document.list"
 ### ✅ Service Can Be Called
 ```python
 # Test from another service:
-from tchu_tchu import TchuClient
+from celery_salt import TchuClient
 
 client = TchuClient()
 try:
@@ -540,8 +543,8 @@ kubectl rollout restart deployment/<service-name>
 
 ## Related Documentation
 
-- [tchu-tchu Migration Guide v2.2.11](./MIGRATION_2.2.11.md) - Critical fixes for handler registration
-- [tchu-tchu README](./README.md) - Full API documentation
+- [CELERY_CONFIG_TEMPLATE](./CELERY_CONFIG_TEMPLATE.md) - Queue and dispatcher setup
+- [README](../README.md) - Full API documentation
 - [RabbitMQ Topic Exchange](https://www.rabbitmq.com/tutorials/tutorial-five-python.html) - Understanding routing keys
 
 ---
@@ -569,8 +572,8 @@ logger.info(f"📋 Registered {len(all_routing_keys)} routing keys: {all_routing
 # Verify handlers are registered
 @app.route('/health')
 def health():
-    from tchu_tchu import get_registry
-    handler_count = get_registry().get_handler_count()
+    from celery_salt.integrations.registry import get_handler_registry
+    handler_count = get_handler_registry().get_handler_count()
     return {
         "status": "healthy",
         "handlers_registered": handler_count
@@ -581,8 +584,8 @@ def health():
 ```python
 # Add to test suite
 def test_rpc_handler_registered():
-    from tchu_tchu import get_registry
-    handlers = get_registry().get_handlers('rpc.cs_pulse.documents.document.list')
+    from celery_salt.integrations.registry import get_handler_registry
+    handlers = get_handler_registry().get_handlers("rpc.cs_pulse.documents.document.list")
     assert len(handlers) > 0, "Handler not registered!"
 ```
 
@@ -600,5 +603,5 @@ Examples:
 ---
 
 **Last Updated:** 2025-11-03  
-**tchu-tchu Version:** 2.2.11+
+**celery-salt:** Ensure `setup_salt_queue()` is called and subscriber modules are imported.
 

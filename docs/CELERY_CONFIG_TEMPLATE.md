@@ -1,66 +1,16 @@
-# Celery Configuration Template for tchu-tchu
+# Celery Configuration Template for CelerySalt
 
-## Recommended Pattern: Extended Celery Class (v2.2.26+)
+## Recommended Pattern: setup_salt_queue (Django)
 
-This is the simplest and most Pythonic approach for Django projects:
-
-```python
-# your_service/celery.py
-import os
-import django
-
-from tchu_tchu.django import Celery  # Extended Celery from tchu-tchu
-from tchu_tchu.events import TchuEvent
-
-# 1. Initialize Django
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings.production")
-django.setup()
-
-# 2. Create Celery app with tchu-tchu extensions
-app = Celery("your_service_name")
-app.config_from_object("django.conf:settings", namespace="CELERY")
-
-# 3. Optional: Set context helper for request reconstruction
-def create_context_helper(event_data):
-    # Your context reconstruction logic
-    return {}
-
-TchuEvent.set_context_helper(create_context_helper)
-
-# 4. Configure message broker - ONE METHOD CALL! 🎉
-app.message_broker(
-    queue_name="your_service_queue",  # Replace with unique queue name
-    include=[
-        "your_service.subscribers.example_subscriber",
-        "your_service.subscribers.user_subscriber",
-        # Add more subscriber modules as needed
-    ],
-)
-```
-
-**That's it!** This automatically:
-- ✅ Imports all subscriber modules after Django is ready
-- ✅ Collects all routing keys from `@subscribe` decorators
-- ✅ Creates queue bindings to the `tchu_events` exchange
-- ✅ Configures Celery queues and task routes
-- ✅ Sets up cross-service RPC messaging
-- ✅ Creates the dispatcher task
-
-See [EXTENDED_CELERY_USAGE.md](./EXTENDED_CELERY_USAGE.md) for complete documentation.
-
----
-
-## Alternative Pattern: setup_celery_queue() Function
-
-Use the standalone function if you prefer or need more control:
+Use the standard Celery app and configure the event queue with **`setup_salt_queue()`**:
 
 ```python
 # your_service/celery.py
 import os
 import django
 
-from celery import Celery  # Standard Celery
-from tchu_tchu.django import setup_celery_queue
+from celery import Celery
+from celery_salt.django import setup_salt_queue
 
 # 1. Initialize Django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings.production")
@@ -70,15 +20,57 @@ django.setup()
 app = Celery("your_service_name")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
-# 3. Set up tchu-tchu queue
-setup_celery_queue(
+# 3. Configure CelerySalt event queue
+setup_salt_queue(
     app,
-    queue_name="your_service_queue",
+    queue_name="your_service_queue",  # Replace with unique queue name
     subscriber_modules=[
+        "your_service.subscribers.example_subscriber",
+        "your_service.subscribers.user_subscriber",
+        # Add more subscriber modules as needed
+    ],
+)
+```
+
+**That's it!** This automatically:
+- Imports all subscriber modules so `@subscribe` handlers are registered
+- Collects routing keys from the handler registry
+- Creates queue bindings to the `tchu_events` exchange
+- Configures Celery task routes for the dispatcher
+- Registers the dispatcher task for broadcast and RPC
+
+**Optional:** If you use `Celery(..., include=[...])`, you can omit `subscriber_modules` and `setup_salt_queue()` will use `app.conf.include`.
+
+See [EXTENDED_CELERY_USAGE.md](./EXTENDED_CELERY_USAGE.md) for details.
+
+---
+
+## Alternative: Subscriber modules from Celery `include`
+
+Specify subscriber modules once in the Celery constructor:
+
+```python
+# your_service/celery.py
+import os
+import django
+
+from celery import Celery
+from celery_salt.django import setup_salt_queue
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings.production")
+django.setup()
+
+app = Celery(
+    "your_service_name",
+    include=[
         "your_service.subscribers.example_subscriber",
         "your_service.subscribers.user_subscriber",
     ],
 )
+app.config_from_object("django.conf:settings", namespace="CELERY")
+
+# Uses app.conf.include for subscriber modules
+setup_salt_queue(app, queue_name="your_service_queue")
 ```
 
 ---
@@ -92,7 +84,10 @@ This pattern works reliably in **all environments** when you need full control:
 
 from celery import Celery
 from kombu import Exchange, Queue, binding
-from tchu_tchu import create_topic_dispatcher, get_subscribed_routing_keys
+from celery_salt.integrations.dispatcher import (
+    create_topic_dispatcher,
+    get_subscribed_routing_keys,
+)
 
 # 1. Create Celery app
 app = Celery(
@@ -140,10 +135,10 @@ app.conf.task_queues = (
 
 # 9. Route the dispatcher task to your queue
 app.conf.task_routes = {
-    "tchu_tchu.dispatch_event": {"queue": "your_service_queue"},
+    "celery_salt.dispatch_event": {"queue": "your_service_queue"},
 }
 
-# 10. Create the dispatcher (registers the tchu_tchu.dispatch_event task)
+# 10. Create the dispatcher (registers the celery_salt.dispatch_event task)
 dispatcher = create_topic_dispatcher(app)
 
 # 11. Optional: Additional Celery configuration
@@ -161,7 +156,7 @@ app.conf.update(
 ```python
 # your_service/subscribers/example_subscriber.py
 
-from tchu_tchu import subscribe
+from celery_salt import subscribe
 import logging
 
 logger = logging.getLogger(__name__)
@@ -200,7 +195,10 @@ def handle_event(data):
 
 from celery import Celery
 from kombu import Exchange, Queue, binding
-from tchu_tchu import create_topic_dispatcher, get_subscribed_routing_keys
+from celery_salt.integrations.dispatcher import (
+    create_topic_dispatcher,
+    get_subscribed_routing_keys,
+)
 
 app = Celery("cs_pulse")
 app.config_from_object("django.conf:settings", namespace="CELERY")
@@ -231,7 +229,7 @@ app.conf.task_queues = (
 
 # Route dispatcher
 app.conf.task_routes = {
-    "tchu_tchu.dispatch_event": {"queue": "cs_pulse_queue"},
+    "celery_salt.dispatch_event": {"queue": "cs_pulse_queue"},
 }
 
 # Create dispatcher
@@ -243,21 +241,14 @@ dispatcher = create_topic_dispatcher(app)
 | Approach | Ease of Use | Django Support | Maintenance | Best For |
 |----------|-------------|----------------|-------------|----------|
 | **Extended Celery class** | ⭐⭐⭐⭐⭐ | ✅ Yes | ✅ Auto | Django projects |
-| **setup_celery_queue()** | ⭐⭐⭐⭐ | ✅ Yes | ✅ Auto | Django projects |
+| **setup_salt_queue()** | ⭐⭐⭐⭐ | ✅ Yes | ✅ Auto | Django projects |
 | **Manual imports** | ⭐⭐⭐ | ✅ Yes | ⚠️ Manual | Advanced/non-Django |
 
-### Extended Celery Class (Recommended)
-✅ Cleanest API  
-✅ Method-based configuration  
-✅ All Celery features preserved  
-✅ Auto-handles Django initialization  
-✅ Auto-imports subscriber modules  
-
-### setup_celery_queue() Function
+### setup_salt_queue() (Recommended)
 ✅ Simple function call  
-✅ Auto-handles Django initialization  
-✅ Auto-imports subscriber modules  
+✅ Auto-imports subscriber modules (or uses Celery `include`)  
 ✅ Works with standard Celery class  
+✅ Configures dispatcher and queue bindings  
 
 ### Manual Configuration
 ✅ Maximum control  
@@ -279,10 +270,7 @@ import your_service.subscribers.missing_subscriber  # noqa
 
 ### Handler not registered in logs
 
-**Check logs for:**
-```
-INFO:tchu_tchu.registry:Registered handler 'handle_document_list' for routing key 'rpc.cs_pulse.documents.document.list'
-```
+**Check logs for:** Handler registration happens when subscriber modules are imported; ensure your queue is bound to the routing key in RabbitMQ.
 
 **If missing:** The module wasn't imported. Add it to celery.py.
 
@@ -317,26 +305,21 @@ watchmedo auto-restart -d . -p '*.py' -- celery -A your_service worker -l info
 
 After starting your worker, check:
 
-1. **Handler registration logs:**
-   ```
-   INFO:tchu_tchu.registry:Registered handler 'handle_document_list' for routing key 'rpc.cs_pulse.documents.document.list'
-   ```
-
-2. **RabbitMQ bindings:**
+1. **RabbitMQ bindings:** Queue should be bound to your routing keys.
    ```bash
    docker exec -it rabbitmq3 rabbitmqctl list_bindings | grep your_service_queue
    ```
 
-3. **Test RPC call:**
+2. **Test RPC call:**
    ```python
-   from tchu_tchu import TchuClient
+   from celery_salt import TchuClient
    client = TchuClient()
-   result = client.call('rpc.your_service.test', {'test': 'data'})
+   result = client.call("rpc.your_service.test", {"test": "data"})
    ```
 
 ## Related Documentation
 
-- [Migration Guide](./MIGRATION_2.2.11.md)
-- [Troubleshooting Guide](./TROUBLESHOOTING_RPC_HANDLERS.md)
-- [Main README](./README.md)
+- [Troubleshooting RPC](./TROUBLESHOOTING_RPC_HANDLERS.md)
+- [EXTENDED_CELERY_USAGE](./EXTENDED_CELERY_USAGE.md)
+- [Main README](../README.md)
 

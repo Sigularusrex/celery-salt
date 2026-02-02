@@ -1,6 +1,7 @@
 """Logging handlers and utilities for CelerySalt."""
 
 import logging
+from typing import Any
 
 from celery_salt.logging.formatters import CelerySaltFormatter
 
@@ -96,6 +97,26 @@ def log_handler_executed(
         extra["duration_seconds"] = duration_seconds
     logger.debug(
         "Handler executed successfully",
+        extra=extra,
+    )
+
+
+def log_handler_return_value(
+    logger: logging.Logger,
+    handler_name: str,
+    topic: str,
+    task_id: str | None,
+    return_value: Any,
+) -> None:
+    """Log a broadcast handler's return value (DEBUG) so it is not discarded."""
+    extra: dict[str, Any] = {
+        "handler": handler_name,
+        "topic": topic,
+        "task_id": task_id,
+        "return_value": return_value,
+    }
+    logger.debug(
+        "Handler completed (broadcast) with return value",
         extra=extra,
     )
 

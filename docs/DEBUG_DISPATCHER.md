@@ -4,66 +4,51 @@ Add this enhanced logging to your `celery.py` to debug the "no_handlers" issue:
 
 ## Option 1: Monkey Patch the Dispatcher (Temporary Debug)
 
-Add this RIGHT AFTER `app.message_broker()` in your `celery.py`:
+Add this RIGHT AFTER `setup_salt_queue()` in your `celery.py`:
 
 ```python
-# At the bottom of your celery.py, after message_broker()
+# At the bottom of your celery.py, after setup_salt_queue()
 
 # Monkey patch to add debug logging
-from tchu_tchu import subscriber
-from tchu_tchu.registry import get_registry
+from celery_salt.integrations.registry import get_handler_registry
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Get the original dispatcher
-original_dispatcher = app.tasks.get('tchu_tchu.dispatch_event')
+# Get the original dispatcher (task name: celery_salt.dispatch_event)
+original_dispatcher = app.tasks.get("celery_salt.dispatch_event")
 
 if original_dispatcher:
     original_run = original_dispatcher.run
-    
+
     def debug_dispatcher(message_body, routing_key=None):
         """Enhanced dispatcher with debug logging"""
         import json
-        
+
         # Log what we received
         logger.info("=" * 80)
-        logger.info("🔍 DISPATCHER DEBUG")
-        logger.info(f"Routing key received: '{routing_key}' (type: {type(routing_key)})")
-        logger.info(f"Routing key repr: {repr(routing_key)}")
-        logger.info(f"Message body type: {type(message_body)}")
-        
+        logger.info("DISPATCHER DEBUG")
+        logger.info(f"Routing key received: %r (type: %s)", routing_key, type(routing_key).__name__)
+        logger.info(f"Message body type: %s", type(message_body).__name__)
+
         # Check registry state
-        registry = get_registry()
-        all_patterns = list(registry._handlers.keys())
-        logger.info(f"Registry has {len(all_patterns)} patterns: {all_patterns}")
-        
-        # Try to get handlers
-        handlers = registry.get_handlers(routing_key)
-        logger.info(f"Handlers found: {len(handlers)}")
-        if handlers:
-            for h in handlers:
-                logger.info(f"  - {h['name']} (module: {h['module']})")
-        else:
-            logger.warning("⚠️  NO HANDLERS FOUND!")
-            logger.info("Trying to match manually...")
-            # Manual pattern matching to see what's wrong
-            for pattern in all_patterns:
-                logger.info(f"  Testing pattern: '{pattern}'")
-                # Check if it should match
-                if pattern == routing_key:
-                    logger.error(f"❌ EXACT MATCH EXISTS BUT get_handlers() didn't find it!")
-                elif pattern.endswith('#') or pattern.endswith('*'):
-                    logger.info(f"    (wildcard pattern, checking match logic)")
-        
+        registry = get_handler_registry()
+        all_keys = list(registry._handlers.keys()) + list(registry._pattern_handlers.keys())
+        logger.info("Registry has %d pattern(s): %s", len(all_keys), all_keys)
+
+        handlers = registry.get_handlers(routing_key or "")
+        logger.info("Handlers found: %d", len(handlers))
+        for h in handlers:
+            logger.info("  - %s (routing_key: %s)", h.get("name"), h.get("routing_key"))
+        if not handlers:
+            logger.warning("NO HANDLERS FOUND for routing_key=%r", routing_key)
+
         logger.info("=" * 80)
-        
-        # Call original dispatcher
+
         return original_run(message_body, routing_key=routing_key)
-    
-    # Replace with debug version
+
     original_dispatcher.run = debug_dispatcher
-    logger.info("✅ Debug dispatcher installed")
+    logger.info("Debug dispatcher installed")
 ```
 
 ## Option 2: Check Registry State at Startup
@@ -72,66 +57,39 @@ Add this RIGHT BEFORE the monkey patch above:
 
 ```python
 # Check registry state at startup
-from tchu_tchu.registry import get_registry
+from celery_salt.integrations.registry import get_handler_registry
 import logging
 
 logger = logging.getLogger(__name__)
 
-registry = get_registry()
-logger.info("\n" + "=" * 80)
-logger.info("📋 REGISTRY STATE AT STARTUP")
-logger.info(f"Total patterns registered: {len(registry._handlers)}")
-
-for pattern, handlers in registry._handlers.items():
-    logger.info(f"\n  Pattern: '{pattern}' (repr: {repr(pattern)})")
-    for handler in handlers:
-        logger.info(f"    ✓ {handler['name']}")
-        logger.info(f"      Module: {handler['module']}")
-        logger.info(f"      Function: {handler['function']}")
-
-logger.info("=" * 80 + "\n")
+registry = get_handler_registry()
+logger.info("REGISTRY STATE AT STARTUP")
+logger.info("Exact routing keys: %s", list(registry._handlers.keys()))
+logger.info("Pattern routing keys: %s", list(registry._pattern_handlers.keys()))
+for key, handlers in registry._handlers.items():
+    for h in handlers:
+        logger.info("  %s -> %s", key, h.get("name"))
+for key, handlers in registry._pattern_handlers.items():
+    for h in handlers:
+        logger.info("  %s (pattern) -> %s", key, h.get("name"))
 ```
 
 ## What to Look For
 
 ### Case 1: Routing Key Mismatch
-```
-Routing key received: 'coolset.event ' (extra space!)
-Registry has patterns: ['coolset.event']
-NO HANDLERS FOUND!
-```
-**Fix:** Routing key has whitespace or encoding issue.
+Routing key has whitespace or encoding issue; handler is registered for a slightly different key.
 
 ### Case 2: Registry Empty
-```
-Routing key received: 'coolset.event'
-Registry has 0 patterns: []
-NO HANDLERS FOUND!
-```
-**Fix:** Handlers not registered. Django setup or import issue.
+Handlers not registered. Ensure subscriber modules are imported (via `setup_salt_queue(subscriber_modules=[...])` or `Celery(..., include=[...])`).
 
 ### Case 3: Pattern Match Failure
-```
-Routing key received: 'coolset.event'
-Registry has patterns: ['coolset.#']
-NO HANDLERS FOUND!
-Testing pattern: 'coolset.#' (wildcard pattern, checking match logic)
-```
-**Fix:** Pattern matching logic broken.
-
-### Case 4: Registry Corruption
-```
-Registry has patterns: ['coolset.event']
-EXACT MATCH EXISTS BUT get_handlers() didn't find it!
-```
-**Fix:** Registry state is corrupt. Need to investigate `get_handlers()` logic.
+Handler registered with a wildcard pattern that does not match the incoming routing key.
 
 ## Next Steps
 
-1. Add the debug code above
-2. Restart workers completely
-3. Publish an event
-4. Share the debug logs here
+1. Add the debug code above (after `setup_salt_queue()`).
+2. Restart workers completely.
+3. Publish an event or make an RPC call.
+4. Inspect logs for routing key, registry keys, and handler count.
 
-This will show us EXACTLY why "no_handlers" is returned!
-
+See [TROUBLESHOOTING_RPC_HANDLERS.md](./TROUBLESHOOTING_RPC_HANDLERS.md) for more.
