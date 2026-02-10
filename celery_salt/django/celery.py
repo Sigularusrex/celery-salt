@@ -137,7 +137,7 @@ def setup_salt_queue(
                 "Verify subscriber_modules contain @subscribe decorators."
             )
         else:
-            logger.info(
+            logger.debug(
                 f"Tchu-tchu: queue '{queue_name}' ready ({handler_count} handlers)"
             )
 

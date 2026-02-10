@@ -78,14 +78,14 @@ def register_event_schema(
         )
 
         if result.get("created"):
-            logger.info(f"✓ Registered schema: {topic} (v{version})")
+            logger.debug(f"Schema registered: {topic} (v{version})")
         else:
             # Schema already exists - validate it matches
             existing_schema = result.get("existing_schema")
             if existing_schema != json_schema:
                 logger.error(
-                    f"✗ Schema conflict for {topic} (v{version})\n"
-                    f"  Existing schema differs from new definition!"
+                    f"Schema conflict for {topic} (v{version}): "
+                    f"existing schema differs from new definition"
                 )
                 raise SchemaConflictError(topic, version)
             else:
@@ -95,8 +95,8 @@ def register_event_schema(
         # Registry unavailable (network issue, DB down, etc.)
         # Cache schema locally for later registration
         logger.warning(
-            f"⚠ Could not register schema {topic} at import time: {e}\n"
-            f"  Schema cached for registration on first publish."
+            f"Could not register schema {topic} at import time: {e}. "
+            f"Schema cached for registration on first publish."
         )
         _cache_schema_for_later(
             topic,

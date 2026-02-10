@@ -54,12 +54,12 @@ class HandlerRegistry:
             # Check if routing_key contains wildcards
             if "*" in routing_key or "#" in routing_key:
                 self._pattern_handlers[routing_key].append(handler_info)
-                logger.info(
+                logger.debug(
                     f"Registered pattern handler '{name}' for routing key pattern '{routing_key}'"
                 )
             else:
                 self._handlers[routing_key].append(handler_info)
-                logger.info(f"Registered handler '{name}' for routing key '{routing_key}'")
+                logger.debug(f"Registered handler '{name}' for routing key '{routing_key}'")
 
             return handler_info["id"]
 

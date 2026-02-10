@@ -1,7 +1,6 @@
 """Logging handlers and utilities for CelerySalt."""
 
 import logging
-from typing import Any
 
 from celery_salt.logging.formatters import CelerySaltFormatter
 
@@ -37,57 +36,14 @@ def get_logger(name: str, level: str | None = None) -> logging.Logger:
     return logger
 
 
-def log_message_published(
-    logger: logging.Logger, topic: str, task_id: str | None = None
-) -> None:
-    """Log a message publication event."""
-    logger.info(
-        "Message published successfully", extra={"topic": topic, "task_id": task_id}
-    )
-
-
-def log_message_received(
-    logger: logging.Logger,
-    topic: str,
-    task_id: str | None = None,
-    correlation_id: str | None = None,
-    is_rpc: bool | None = None,
-) -> None:
-    """Log a message reception event (DEBUG to reduce INFO noise)."""
-    extra: dict[str, str | bool | None] = {"topic": topic, "task_id": task_id}
-    if correlation_id is not None:
-        extra["correlation_id"] = correlation_id
-    if is_rpc is not None:
-        extra["is_rpc"] = is_rpc
-    logger.debug("Message received", extra=extra)
-
-
-def log_handler_started(
-    logger: logging.Logger,
-    handler_name: str,
-    topic: str,
-    task_id: str | None = None,
-    correlation_id: str | None = None,
-) -> None:
-    """Log when a handler is about to run (DEBUG for tracing)."""
-    extra: dict[str, str | None] = {
-        "handler": handler_name,
-        "topic": topic,
-        "task_id": task_id,
-    }
-    if correlation_id is not None:
-        extra["correlation_id"] = correlation_id
-    logger.debug("Handler started", extra=extra)
-
-
-def log_handler_executed(
+def log_handler_processed(
     logger: logging.Logger,
     handler_name: str,
     topic: str,
     task_id: str | None = None,
     duration_seconds: float | None = None,
 ) -> None:
-    """Log a handler execution event (DEBUG to reduce INFO noise)."""
+    """Log when a subscriber handler has processed an event (INFO)."""
     extra: dict[str, str | float | None] = {
         "handler": handler_name,
         "topic": topic,
@@ -95,28 +51,10 @@ def log_handler_executed(
     }
     if duration_seconds is not None:
         extra["duration_seconds"] = duration_seconds
-    logger.debug(
-        "Handler executed successfully",
-        extra=extra,
-    )
-
-
-def log_handler_return_value(
-    logger: logging.Logger,
-    handler_name: str,
-    topic: str,
-    task_id: str | None,
-    return_value: Any,
-) -> None:
-    """Log a broadcast handler's return value (DEBUG) so it is not discarded."""
-    extra: dict[str, Any] = {
-        "handler": handler_name,
-        "topic": topic,
-        "task_id": task_id,
-        "return_value": return_value,
-    }
-    logger.debug(
-        "Handler completed (broadcast) with return value",
+    logger.info(
+        f"Subscriber '{handler_name}' processed '{topic}' ({duration_seconds:.2f}s)"
+        if duration_seconds is not None
+        else f"Subscriber '{handler_name}' processed '{topic}'",
         extra=extra,
     )
 
@@ -155,19 +93,6 @@ def log_dispatch_completed(
             "Dispatch completed",
             extra=extra,
         )
-
-
-def log_rpc_call(
-    logger: logging.Logger,
-    topic: str,
-    execution_time: float,
-    task_id: str | None = None,
-) -> None:
-    """Log an RPC call completion."""
-    logger.info(
-        f"RPC call completed in {execution_time:.2f} seconds",
-        extra={"topic": topic, "execution_time": execution_time, "task_id": task_id},
-    )
 
 
 def log_error(

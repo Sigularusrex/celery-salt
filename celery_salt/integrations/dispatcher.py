@@ -21,9 +21,7 @@ from celery_salt.logging.handlers import (
     get_logger,
     log_dispatch_completed,
     log_error,
-    log_handler_executed,
-    log_handler_started,
-    log_message_received,
+    log_handler_processed,
 )
 from celery_salt.metrics.collectors import get_metrics_collector
 from celery_salt.observability.opentelemetry import set_dispatch_span_attributes
@@ -98,11 +96,6 @@ def create_topic_dispatcher(
                 message_version = tchu_meta.get("version")
                 correlation_id = tchu_meta.get("correlation_id")
 
-            log_message_received(
-                logger, routing_key, message_id,
-                correlation_id=correlation_id, is_rpc=is_rpc,
-            )
-
             # Get all matching handlers for this routing key
             all_handlers = registry.get_handlers(routing_key)
 
@@ -161,16 +154,6 @@ def create_topic_dispatcher(
                     duration_seconds=duration_seconds,
                     status="no_handlers",
                 )
-                log_dispatch_completed(
-                    logger,
-                    routing_key,
-                    message_id,
-                    duration_seconds,
-                    is_rpc=False,
-                    handlers_executed=0,
-                    status="no_handlers",
-                    correlation_id=correlation_id,
-                )
                 logger.warning(
                     f"No local handlers found for routing key '{routing_key}'",
                     extra={"routing_key": routing_key},
@@ -184,20 +167,12 @@ def create_topic_dispatcher(
                 handler_name = handler_info["name"]
                 handler_id = handler_info["id"]
 
-                log_handler_started(
-                    logger, handler_name, routing_key, message_id,
-                    correlation_id=correlation_id,
-                )
                 handler_started_at = time.perf_counter()
 
                 try:
                     if is_rpc:
                         # RPC: Must call directly (synchronously) to return result to caller
                         # Cannot use apply_async().get() because we're already in a task
-                        # For bound tasks (bind=True), we need to access the underlying function
-                        # and call it with a mock task instance
-
-                        # RPC: Execute synchronously in the same process
                         # For bound tasks (bind=True), we need to access the underlying function
                         # and call it with a mock task instance
                         import inspect
@@ -249,8 +224,11 @@ def create_topic_dispatcher(
                             }
                         )
                         handler_duration = time.perf_counter() - handler_started_at
-                        log_handler_executed(
-                            logger, handler_name, routing_key, message_id,
+                        log_handler_processed(
+                            logger,
+                            handler_name,
+                            routing_key,
+                            message_id,
                             duration_seconds=handler_duration,
                         )
                     else:
@@ -268,9 +246,10 @@ def create_topic_dispatcher(
                                 "task_id": async_result.id,
                             }
                         )
-                        logger.debug(
-                            f"Dispatched handler '{handler_name}' (task_id={async_result.id})",
+                        logger.info(
+                            f"Subscriber '{handler_name}' dispatched for '{routing_key}'",
                             extra={
+                                "handler": handler_name,
                                 "routing_key": routing_key,
                                 "task_id": async_result.id,
                             },
@@ -284,8 +263,11 @@ def create_topic_dispatcher(
                         metadata={"handler": handler_name},
                     )
                     log_error(
-                        logger, f"Handler '{handler_name}' failed", e,
-                        topic=routing_key, task_id=message_id,
+                        logger,
+                        f"Handler '{handler_name}' failed",
+                        e,
+                        topic=routing_key,
+                        task_id=message_id,
                     )
                     results.append(
                         {

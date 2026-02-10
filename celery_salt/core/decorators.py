@@ -161,8 +161,6 @@ def response(topic: str, version: str = "v1") -> Callable:
         pydantic_model._celerysalt_model = pydantic_model
         pydantic_model._celerysalt_is_response = True
 
-        logger.debug(f"Registered response schema for RPC topic: {topic}")
-
         # Return the Pydantic model so it can be instantiated directly
         return pydantic_model
 
@@ -212,8 +210,6 @@ def error(topic: str, version: str = "v1") -> Callable:
         pydantic_model._celerysalt_topic = topic
         pydantic_model._celerysalt_model = pydantic_model
         pydantic_model._celerysalt_is_error = True
-
-        logger.debug(f"Registered error schema for RPC topic: {topic}")
 
         # Return the Pydantic model so it can be instantiated directly
         return pydantic_model
@@ -494,16 +490,18 @@ def subscribe(
             # self is the Celery task instance (because bind=True)
             # raw_data is the event data
 
-            # Extract _tchu_meta if present (for RPC detection and protocol compatibility)
-            meta = raw_data.pop("_tchu_meta", {})
+            # Extract _tchu_meta without mutating raw_data (safe for stacked @subscribe decorators)
+            meta = raw_data.get("_tchu_meta", {})
             is_rpc = meta.get("is_rpc", False)
+            clean_data = {k: v for k, v in raw_data.items() if k != "_tchu_meta"}
 
             # Validate data (include topic + handler in error so Celery UI shows which event failed)
             try:
-                validated = validation_model(**raw_data)
+                validated = validation_model(**clean_data)
             except ValidationError as e:
                 logger.error(
-                    f"Validation failed for topic '{resolved_topic}' (handler {func.__name__}): {e}"
+                    f"Validation failed for topic '{resolved_topic}' "
+                    f"(handler={func.__name__}, keys={list(clean_data.keys())}): {e}"
                 )
                 raise EventValidationError(
                     str(e),
@@ -522,7 +520,8 @@ def subscribe(
                         handler_arg = resolved_event_cls(**validated.model_dump())
                     except ValidationError as e:
                         logger.error(
-                            f"Event class validation failed for topic '{resolved_topic}' (handler {func.__name__}): {e}"
+                            f"Event class validation failed for topic '{resolved_topic}' "
+                            f"(handler={func.__name__}, keys={list(validated.model_dump().keys())}): {e}"
                         )
                         raise EventValidationError(
                             str(e),
@@ -536,8 +535,8 @@ def subscribe(
                 # Convert RPCError to error response dict
                 if is_rpc:
                     error_response = rpc_error.to_response_dict()
-                    logger.debug(
-                        f"RPC error for {topic}: {rpc_error.error_code} - {rpc_error.error_message}"
+                    logger.warning(
+                        f"RPC error for '{resolved_topic}': {rpc_error.error_code} - {rpc_error.error_message}"
                     )
                     # Validate against error schema if defined
                     if topic in _rpc_error_schemas:
@@ -605,8 +604,8 @@ def subscribe(
                     topic=resolved_topic,
                     handler_name=func.__name__,
                 )
-        except Exception as e:
-            logger.debug(f"Could not track subscriber: {e}")
+        except Exception:
+            pass
 
         return task
 

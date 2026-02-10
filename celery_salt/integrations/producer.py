@@ -150,6 +150,8 @@ def publish_event(
         }
         serialized_body = dumps_message(body_with_meta)
 
+        transport = None
+
         # If broker_url is explicitly provided, prefer kombu (for examples and serverless)
         # This ensures messages go to the topic exchange, not Celery's default direct exchange
         if broker_url is not None:
@@ -168,110 +170,89 @@ def publish_event(
                 dispatcher_task_name=dispatcher_task_name,
                 message_id=message_id,
             )
-
-            get_metrics_collector().record_message_published(
-                topic, task_id=message_id, metadata={"transport": "kombu"}
-            )
-            set_publish_span_attributes(topic, message_id=message_id, is_rpc=is_rpc)
-            _log_extra = {"routing_key": topic, "message_id": message_id}
-            if correlation_id:
-                _log_extra["correlation_id"] = correlation_id
-            if version:
-                _log_extra["version"] = version
-            logger.info(
-                f"Published message {message_id} to routing key '{topic}' (via kombu)",
-                extra=_log_extra,
-            )
-
-            return message_id
+            transport = "kombu"
 
         # Try Celery (if available and no broker_url provided)
-        app = _resolve_app(celery_app)
-        if CELERY_AVAILABLE and app is not None:
-            try:
-                routes = getattr(app.conf, "task_routes", {})
-                dispatcher_route = routes.get(dispatcher_task_name, {})
+        if transport is None:
+            app = _resolve_app(celery_app)
+            if CELERY_AVAILABLE and app is not None:
+                try:
+                    routes = getattr(app.conf, "task_routes", {})
+                    dispatcher_route = routes.get(dispatcher_task_name, {})
 
-                if (
-                    dispatcher_route.get("exchange") == exchange_name
-                    and dispatcher_route.get("exchange_type") == "topic"
-                ):
-                    # Forward publish_kwargs (e.g. priority, countdown, expires) to Celery
-                    send_options = {
-                        **publish_kwargs,
-                        "routing_key": topic,
-                        "task_id": message_id,
-                    }
-                    app.send_task(
-                        dispatcher_task_name,
-                        args=[serialized_body],
-                        kwargs={"routing_key": topic},
-                        **send_options,
+                    if (
+                        dispatcher_route.get("exchange") == exchange_name
+                        and dispatcher_route.get("exchange_type") == "topic"
+                    ):
+                        # Forward publish_kwargs (e.g. priority, countdown, expires) to Celery
+                        send_options = {
+                            **publish_kwargs,
+                            "routing_key": topic,
+                            "task_id": message_id,
+                        }
+                        app.send_task(
+                            dispatcher_task_name,
+                            args=[serialized_body],
+                            kwargs={"routing_key": topic},
+                            **send_options,
+                        )
+                        transport = "celery"
+                    else:
+                        logger.debug(
+                            f"Celery routing not configured for topic exchange, using kombu. "
+                            f"Configure task_routes for {dispatcher_task_name} to use topic exchange."
+                        )
+                        raise AttributeError("Topic exchange routing not configured")
+                except (AttributeError, RuntimeError) as e:
+                    # Celery app not available or routing not configured, fall through to kombu
+                    logger.debug(
+                        f"Celery publish not available, falling back to kombu: {e}"
                     )
-                    get_metrics_collector().record_message_published(
-                        topic, task_id=message_id, metadata={"transport": "celery"}
-                    )
-                    set_publish_span_attributes(
-                        topic, message_id=message_id, is_rpc=is_rpc
-                    )
-                    _log_extra = {"routing_key": topic, "message_id": message_id}
-                    if correlation_id:
-                        _log_extra["correlation_id"] = correlation_id
-                    if version:
-                        _log_extra["version"] = version
-                    logger.info(
-                        f"Published message {message_id} to routing key '{topic}' (via Celery)",
-                        extra=_log_extra,
-                    )
-                    return message_id
-
-                logger.debug(
-                    f"Celery routing not configured for topic exchange, using kombu. "
-                    f"Configure task_routes for {dispatcher_task_name} to use topic exchange."
-                )
-                raise AttributeError("Topic exchange routing not configured")
-            except (AttributeError, RuntimeError) as e:
-                # Celery app not available or routing not configured, fall through to kombu
-                logger.debug(
-                    f"Celery publish not available, falling back to kombu: {e}"
-                )
-                pass
+            else:
+                app = None
 
         # Fallback to kombu (serverless or topic routing not configured)
-        if not KOMBU_AVAILABLE:
-            raise PublishError(
-                "Cannot publish: Celery not available and kombu not installed. "
-                "Install kombu for serverless support: pip install kombu"
+        if transport is None:
+            if not KOMBU_AVAILABLE:
+                raise PublishError(
+                    "Cannot publish: Celery not available and kombu not installed. "
+                    "Install kombu for serverless support: pip install kombu"
+                )
+
+            resolved_broker_url = _resolve_broker_url(broker_url, app)
+            if resolved_broker_url is None:
+                raise PublishError(
+                    "broker_url required for publish. "
+                    "Django: add 'celery_salt.django' to INSTALLED_APPS and set CELERY_APP, "
+                    "or set CELERY_BROKER_URL / CELERY_SALT_BROKER_URL."
+                )
+
+            _publish_via_kombu(
+                broker_url=resolved_broker_url,
+                exchange_name=exchange_name,
+                routing_key=topic,
+                message_body=serialized_body,
+                dispatcher_task_name=dispatcher_task_name,
+                message_id=message_id,
             )
+            transport = "kombu"
 
-        resolved_broker_url = _resolve_broker_url(broker_url, app)
-        if resolved_broker_url is None:
-            raise PublishError(
-                "broker_url required for publish. "
-                "Django: add 'celery_salt.django' to INSTALLED_APPS and set CELERY_APP, "
-                "or set CELERY_BROKER_URL / CELERY_SALT_BROKER_URL."
-            )
-
-        _publish_via_kombu(
-            broker_url=resolved_broker_url,
-            exchange_name=exchange_name,
-            routing_key=topic,
-            message_body=serialized_body,
-            dispatcher_task_name=dispatcher_task_name,
-            message_id=message_id,
-        )
-
+        # Single consolidated publish log
         get_metrics_collector().record_message_published(
-            topic, task_id=message_id, metadata={"transport": "kombu_serverless"}
+            topic, task_id=message_id, metadata={"transport": transport}
         )
         set_publish_span_attributes(topic, message_id=message_id, is_rpc=is_rpc)
-        _log_extra = {"routing_key": topic, "message_id": message_id}
+        _log_extra = {
+            "routing_key": topic,
+            "message_id": message_id,
+            "transport": transport,
+        }
         if correlation_id:
             _log_extra["correlation_id"] = correlation_id
         if version:
             _log_extra["version"] = version
         logger.info(
-            f"Published message {message_id} to routing key '{topic}' (via kombu/serverless)",
+            f"Published event to '{topic}' (message_id={message_id}, transport={transport})",
             extra=_log_extra,
         )
 
@@ -477,15 +458,7 @@ def call_rpc(
                 if results:
                     first_result = results[0]
                     if first_result.get("status") == "success":
-                        logger.info(
-                            f"RPC call {message_id} completed in {execution_time:.2f} seconds",
-                            extra={
-                                "routing_key": topic,
-                                "message_id": message_id,
-                                "execution_time": execution_time,
-                            },
-                        )
-                        return first_result.get("result")
+                        rpc_result = first_result.get("result")
                     else:
                         error = first_result.get("error", "Unknown error")
                         handler_name = first_result.get("handler", "unknown")
@@ -512,17 +485,20 @@ def call_rpc(
                     raise PublishError(
                         f"No results returned from handler for routing key '{topic}'"
                     )
+            else:
+                # If response is not a dict, return it as-is (legacy)
+                rpc_result = response
 
-            # If response is not a dict, return it as-is (legacy)
+            # Single consolidated RPC completion log
             logger.info(
-                f"RPC call {message_id} completed in {execution_time:.2f} seconds",
+                f"RPC call {message_id} completed in {execution_time:.2f}s",
                 extra={
                     "routing_key": topic,
                     "message_id": message_id,
                     "execution_time": execution_time,
                 },
             )
-            return response
+            return rpc_result
 
         except Exception as e:
             # Check if it's a timeout

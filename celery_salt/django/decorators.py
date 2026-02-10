@@ -216,20 +216,10 @@ def auto_publish(
                     # Serialize with validation and publish
                     event_instance.serialize_request(data, context=context)
                     event_instance.publish()
-
-                    logger.info(
-                        f"Published {event_type} event for {model_class.__name__}",
-                        extra={"topic": event_instance.topic, "model_pk": instance.pk},
-                    )
                 else:
                     # Raw mode: publish via client or producer
                     topic = f"{base_topic}.{event_type}"
                     event_client.publish(topic, data)
-
-                    logger.info(
-                        f"Published {event_type} event for {model_class.__name__}",
-                        extra={"topic": topic, "model_pk": instance.pk},
-                    )
 
             except Exception as e:
                 logger.error(
@@ -283,11 +273,11 @@ def auto_publish(
         if event_classes:
             event_list = ", ".join(event_classes.keys())
             context_note = " (with context)" if context_provider else ""
-            logger.info(
+            logger.debug(
                 f"Auto-publish: {model_class.__name__} -> events: {event_list}{context_note}"
             )
         else:
-            logger.info(
+            logger.debug(
                 f"Auto-publish: {model_class.__name__} -> topic: {base_topic}.*"
             )
 
