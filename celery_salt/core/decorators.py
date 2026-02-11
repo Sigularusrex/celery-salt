@@ -275,6 +275,142 @@ def _create_rpc_method(
     return call
 
 
+def _resolve_subscribe_args(
+    topic: str | type,
+    version: str,
+    event_cls: type | None,
+) -> tuple[str, str, type | None]:
+    """
+    Resolve topic, version, and event_cls for @subscribe.
+    When topic is a SaltEvent subclass, infer topic/version from Meta.
+    """
+    resolved_topic = topic
+    resolved_version = version
+    resolved_event_cls = event_cls
+
+    if isinstance(resolved_topic, type):
+        from celery_salt.core.events import SaltEvent
+
+        if issubclass(resolved_topic, SaltEvent):
+            resolved_event_cls = resolved_topic
+            resolved_topic = resolved_event_cls.Meta.topic
+            if version == "latest":
+                resolved_version = getattr(resolved_event_cls.Meta, "version", "v1")
+
+    return resolved_topic, resolved_version, resolved_event_cls
+
+
+def _create_validated_handler(
+    validation_model: type[BaseModel],
+    func: Callable,
+    resolved_topic: str,
+    resolved_event_cls: type | None,
+) -> Callable:
+    """Build the inner Celery task that validates payload and invokes the handler."""
+
+    def validated_handler(self: Any, raw_data: dict) -> Any:
+        meta = raw_data.get("_tchu_meta", {})
+        is_rpc = meta.get("is_rpc", False)
+        clean_data = {k: v for k, v in raw_data.items() if k != "_tchu_meta"}
+
+        try:
+            validated = validation_model(**clean_data)
+        except ValidationError as e:
+            fmt = format_validation_error(e)
+            logger.error(
+                f"Schema validation failed for topic '{resolved_topic}' "
+                f"(handler={func.__name__}): {fmt['summary']}",
+                extra={
+                    "topic": resolved_topic,
+                    "handler": func.__name__,
+                    "validation_errors": fmt["errors"],
+                    "data_keys": list(clean_data.keys()),
+                },
+            )
+            raise EventValidationError(
+                str(e),
+                topic=resolved_topic,
+                handler_name=func.__name__,
+                validation_error=e,
+            ) from e
+
+        handler_arg: Any = validated
+        if resolved_event_cls is not None:
+            try:
+                handler_arg = resolved_event_cls(**validated.model_dump())
+            except ValidationError as e:
+                fmt = format_validation_error(e)
+                logger.error(
+                    f"Event class validation failed for topic '{resolved_topic}' "
+                    f"(handler={func.__name__}): {fmt['summary']}",
+                    extra={
+                        "topic": resolved_topic,
+                        "handler": func.__name__,
+                        "validation_errors": fmt["errors"],
+                    },
+                )
+                raise EventValidationError(
+                    str(e),
+                    topic=resolved_topic,
+                    handler_name=func.__name__,
+                    validation_error=e,
+                ) from e
+
+        try:
+            result = func(handler_arg)
+        except RPCError as rpc_error:
+            if is_rpc:
+                error_response = rpc_error.to_response_dict()
+                logger.warning(
+                    f"RPC error for '{resolved_topic}': {rpc_error.error_code} - {rpc_error.error_message}"
+                )
+                if resolved_topic in _rpc_error_schemas:
+                    error_model = _rpc_error_schemas[resolved_topic]
+                    try:
+                        return error_model(**error_response)
+                    except ValidationError as e:
+                        fmt = format_validation_error(e)
+                        logger.warning(
+                            f"RPC error response schema validation failed for '{resolved_topic}': "
+                            f"{fmt['summary']}",
+                            extra={
+                                "topic": resolved_topic,
+                                "validation_errors": fmt["errors"],
+                            },
+                        )
+                        return error_response
+                return error_response
+            raise
+
+        if is_rpc:
+            if isinstance(result, BaseModel):
+                result = result.model_dump()
+            if resolved_topic in _rpc_response_schemas and isinstance(result, dict):
+                response_model = _rpc_response_schemas[resolved_topic]
+                try:
+                    return response_model(**result)
+                except ValidationError as e:
+                    fmt = format_validation_error(e)
+                    logger.warning(
+                        f"RPC response schema validation failed for '{resolved_topic}': "
+                        f"{fmt['summary']}. Returning raw response.",
+                        extra={
+                            "topic": resolved_topic,
+                            "validation_errors": fmt["errors"],
+                        },
+                    )
+                    return result
+            return result
+
+        if result is None:
+            return None
+        if isinstance(result, BaseModel):
+            return result.model_dump(mode="json")
+        return json.loads(dumps_message(result))
+
+    return validated_handler
+
+
 def subscribe(
     topic: str | type,
     version: str = "latest",
@@ -319,142 +455,17 @@ def subscribe(
     """
 
     def decorator(func: Callable) -> Callable:
-        resolved_topic = topic
-        resolved_version = version
-        resolved_event_cls = event_cls
+        resolved_topic, resolved_version, resolved_event_cls = _resolve_subscribe_args(
+            topic, version, event_cls
+        )
 
-        # Allow @subscribe(EventClass) where EventClass is a SaltEvent subclass.
-        if isinstance(resolved_topic, type):
-            # Local import to avoid circulars at import time.
-            from celery_salt.core.events import SaltEvent
-
-            if issubclass(resolved_topic, SaltEvent):
-                resolved_event_cls = resolved_topic
-                resolved_topic = resolved_event_cls.Meta.topic
-                if version == "latest":
-                    resolved_version = getattr(resolved_event_cls.Meta, "version", "v1")
-
-        # 1. Fetch schema from registry
         schema = _fetch_schema(resolved_topic, resolved_version)
-
-        # 2. Create Pydantic model from schema
         validation_model = _create_model_from_schema(schema)
+        validated_handler = _create_validated_handler(
+            validation_model, func, resolved_topic, resolved_event_cls
+        )
 
-        # 3. Wrap handler with validation
-        # Note: bind=True means Celery will pass task instance as first arg
-        def validated_handler(self, raw_data: dict) -> Any:
-            # self is the Celery task instance (because bind=True)
-            # raw_data is the event data
-
-            # Extract _tchu_meta without mutating raw_data (safe for stacked @subscribe decorators)
-            meta = raw_data.get("_tchu_meta", {})
-            is_rpc = meta.get("is_rpc", False)
-            clean_data = {k: v for k, v in raw_data.items() if k != "_tchu_meta"}
-
-            # Validate data (include topic + handler in error so Celery UI shows which event failed)
-            try:
-                validated = validation_model(**clean_data)
-            except ValidationError as e:
-                fmt = format_validation_error(e)
-                logger.error(
-                    f"Schema validation failed for topic '{resolved_topic}' "
-                    f"(handler={func.__name__}): {fmt['summary']}",
-                    extra={
-                        "topic": resolved_topic,
-                        "handler": func.__name__,
-                        "validation_errors": fmt["errors"],
-                        "data_keys": list(clean_data.keys()),
-                    },
-                )
-                raise EventValidationError(
-                    str(e),
-                    topic=resolved_topic,
-                    handler_name=func.__name__,
-                    validation_error=e,
-                ) from e
-
-            # Call handler with validated data
-            try:
-                handler_arg: Any = validated
-                if resolved_event_cls is not None:
-                    # Wrap the validated payload in a full event instance.
-                    # Note: event_cls.__init__ validates using its Schema too.
-                    try:
-                        handler_arg = resolved_event_cls(**validated.model_dump())
-                    except ValidationError as e:
-                        fmt = format_validation_error(e)
-                        logger.error(
-                            f"Event class validation failed for topic '{resolved_topic}' "
-                            f"(handler={func.__name__}): {fmt['summary']}",
-                            extra={
-                                "topic": resolved_topic,
-                                "handler": func.__name__,
-                                "validation_errors": fmt["errors"],
-                            },
-                        )
-                        raise EventValidationError(
-                            str(e),
-                            topic=resolved_topic,
-                            handler_name=func.__name__,
-                            validation_error=e,
-                        ) from e
-
-                result = func(handler_arg)
-            except RPCError as rpc_error:
-                # Convert RPCError to error response dict
-                if is_rpc:
-                    error_response = rpc_error.to_response_dict()
-                    logger.warning(
-                        f"RPC error for '{resolved_topic}': {rpc_error.error_code} - {rpc_error.error_message}"
-                    )
-                    # Validate against error schema if defined
-                    if resolved_topic in _rpc_error_schemas:
-                        error_model = _rpc_error_schemas[resolved_topic]
-                        try:
-                            return error_model(**error_response)
-                        except ValidationError as e:
-                            fmt = format_validation_error(e)
-                            logger.warning(
-                                f"RPC error response schema validation failed for '{resolved_topic}': "
-                                f"{fmt['summary']}",
-                                extra={"topic": resolved_topic, "validation_errors": fmt["errors"]},
-                            )
-                            return error_response
-                    return error_response
-                else:
-                    # For broadcast events, re-raise the exception
-                    raise
-
-            # For RPC, validate and return result
-            if is_rpc:
-                # If result is already a Pydantic model, convert to dict
-                if isinstance(result, BaseModel):
-                    result = result.model_dump()
-
-                # Validate against response schema if defined
-                if resolved_topic in _rpc_response_schemas and isinstance(result, dict):
-                    response_model = _rpc_response_schemas[resolved_topic]
-                    try:
-                        return response_model(**result)
-                    except ValidationError as e:
-                        fmt = format_validation_error(e)
-                        logger.warning(
-                            f"RPC response schema validation failed for '{resolved_topic}': "
-                            f"{fmt['summary']}. Returning raw response.",
-                            extra={"topic": resolved_topic, "validation_errors": fmt["errors"]},
-                        )
-                        return result
-
-                return result
-
-            # Broadcast: return result so Flower and result backend show it (normalize to JSON-serializable)
-            if result is None:
-                return None
-            if isinstance(result, BaseModel):
-                return result.model_dump(mode="json")
-            return json.loads(dumps_message(result))
-
-        # 4. Register as Celery task
+        # Register as Celery task
         from celery import shared_task
 
         task = shared_task(
@@ -463,7 +474,7 @@ def subscribe(
             **celery_options,
         )(validated_handler)
 
-        # 5. Register handler in global registry (for queue binding)
+        # Register handler in global registry (for queue binding)
         from celery_salt.integrations.registry import get_handler_registry
 
         registry = get_handler_registry()
@@ -471,7 +482,7 @@ def subscribe(
         metadata = {"version": resolved_version}
         registry.register_handler(resolved_topic, task, metadata=metadata)
 
-        # 6. Track subscriber in database (if schema registry supports it)
+        # Track subscriber in database (if schema registry supports it)
         try:
             schema_registry = get_schema_registry()
             if hasattr(schema_registry, "track_subscriber"):
