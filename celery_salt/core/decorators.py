@@ -34,6 +34,17 @@ _rpc_response_schemas: dict[str, type[BaseModel]] = {}
 _rpc_error_schemas: dict[str, type[BaseModel]] = {}
 
 
+def _class_to_pydantic_model(cls: type) -> type[BaseModel]:
+    """Convert class annotations to a Pydantic model, skipping private attributes."""
+    fields = {}
+    for name, annotation in getattr(cls, "__annotations__", {}).items():
+        if name.startswith("_"):
+            continue
+        default = getattr(cls, name, ...)
+        fields[name] = (annotation, default)
+    return create_model(cls.__name__, __base__=BaseModel, **fields)
+
+
 def event(
     topic: str,
     mode: str = "broadcast",
@@ -70,23 +81,7 @@ def event(
     """
 
     def decorator(cls: type) -> type:
-        # Convert class annotations to Pydantic model
-        fields = {}
-        for name, annotation in getattr(cls, "__annotations__", {}).items():
-            # Skip private attributes
-            if name.startswith("_"):
-                continue
-
-            # Get default value if present
-            default = getattr(cls, name, ...)
-            fields[name] = (annotation, default)
-
-        # Create Pydantic model from class
-        pydantic_model = create_model(
-            cls.__name__,
-            __base__=BaseModel,
-            **fields,
-        )
+        pydantic_model = _class_to_pydantic_model(cls)
 
         # Register schema IMMEDIATELY (import time!)
         register_event_schema(
@@ -139,20 +134,7 @@ def response(topic: str, version: str = "v1") -> Callable:
     """
 
     def decorator(cls: type) -> type:
-        # Convert class annotations to Pydantic model
-        fields = {}
-        for name, annotation in getattr(cls, "__annotations__", {}).items():
-            if name.startswith("_"):
-                continue
-            default = getattr(cls, name, ...)
-            fields[name] = (annotation, default)
-
-        # Create Pydantic model
-        pydantic_model = create_model(
-            cls.__name__,
-            __base__=BaseModel,
-            **fields,
-        )
+        pydantic_model = _class_to_pydantic_model(cls)
 
         # Store response schema for this topic
         _rpc_response_schemas[topic] = pydantic_model
@@ -189,20 +171,7 @@ def error(topic: str, version: str = "v1") -> Callable:
     """
 
     def decorator(cls: type) -> type:
-        # Convert class annotations to Pydantic model
-        fields = {}
-        for name, annotation in getattr(cls, "__annotations__", {}).items():
-            if name.startswith("_"):
-                continue
-            default = getattr(cls, name, ...)
-            fields[name] = (annotation, default)
-
-        # Create Pydantic model
-        pydantic_model = create_model(
-            cls.__name__,
-            __base__=BaseModel,
-            **fields,
-        )
+        pydantic_model = _class_to_pydantic_model(cls)
 
         # Store error schema for this topic
         _rpc_error_schemas[topic] = pydantic_model
