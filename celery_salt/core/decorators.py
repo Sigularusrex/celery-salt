@@ -20,6 +20,7 @@ from celery_salt.core.event_utils import (
 from celery_salt.core.exceptions import EventValidationError, RPCError
 from celery_salt.core.registry import get_schema_registry
 from celery_salt.logging.handlers import get_logger
+from celery_salt.logging.validation_errors import format_validation_error
 from celery_salt.utils.json_encoder import dumps_message
 
 logger = get_logger(__name__)
@@ -222,43 +223,6 @@ event.response = response
 event.error = error
 
 
-# _register_schema_at_import is now replaced by register_event_schema from event_utils
-# Keeping these for backward compatibility but they're deprecated
-def _register_schema_at_import(
-    topic: str,
-    version: str,
-    model: type[BaseModel],
-    publisher_class: type,
-) -> None:
-    """
-    Register schema immediately at import time.
-
-    DEPRECATED: Use register_event_schema from event_utils instead.
-    """
-    register_event_schema(
-        topic=topic,
-        version=version,
-        schema_model=model,
-        publisher_class=publisher_class,
-        mode="broadcast",
-        description="",
-        response_schema_model=None,
-        error_schema_model=None,
-        auto_register=True,
-    )
-
-
-def _cache_schema_for_later(
-    topic: str,
-    version: str,
-    schema: dict,
-    publisher_class: type,
-) -> None:
-    """Cache schema locally if registry is unavailable at import time."""
-    # This is now handled by register_event_schema in event_utils
-    pass
-
-
 def _create_publish_method(
     topic: str,
     model: type[BaseModel],
@@ -342,83 +306,6 @@ def _create_rpc_method(
     return call
 
 
-# _ensure_schema_registered is now replaced by ensure_schema_registered from event_utils
-# Keeping this for backward compatibility but it's deprecated
-def _ensure_schema_registered(
-    topic: str,
-    model: type[BaseModel],
-    publisher_class: type,
-) -> None:
-    """Ensure schema is registered (safety net if import-time registration failed)."""
-    version = getattr(publisher_class, "_celerysalt_version", "v1")
-    mode = getattr(publisher_class, "_celerysalt_mode", "broadcast")
-    ensure_schema_registered(
-        topic=topic,
-        version=version,
-        schema_model=model,
-        publisher_class=publisher_class,
-        mode=mode,
-        description="",
-        response_schema_model=None,
-        error_schema_model=None,
-    )
-
-
-def _validate_rpc_response(topic: str, response: Any) -> Any:
-    """
-    Validate RPC response against response or error schema if defined.
-
-    Returns:
-        Validated response as Pydantic model instance (response or error schema)
-    """
-    if response is None:
-        return response
-
-    # Check if response is a dict (from RPCError or handler return)
-    if not isinstance(response, dict):
-        # If it's already a Pydantic model, return as-is
-        if isinstance(response, BaseModel):
-            return response
-        # Otherwise, try to convert
-        response = response if isinstance(response, dict) else {"data": response}
-
-    # Check if it's an error response (has error_code)
-    is_error = "error_code" in response or "error_message" in response
-
-    if is_error:
-        # Validate against error schema if defined
-        if topic in _rpc_error_schemas:
-            error_model = _rpc_error_schemas[topic]
-            try:
-                return error_model(**response)
-            except ValidationError as e:
-                logger.warning(
-                    f"Error response validation failed for {topic}: {e}. "
-                    f"Returning raw response."
-                )
-                # Return raw response if validation fails
-                return response
-        else:
-            # No error schema defined, return as-is
-            return response
-    else:
-        # Validate against success response schema if defined
-        if topic in _rpc_response_schemas:
-            response_model = _rpc_response_schemas[topic]
-            try:
-                return response_model(**response)
-            except ValidationError as e:
-                logger.warning(
-                    f"Response validation failed for {topic}: {e}. "
-                    f"Returning raw response."
-                )
-                # Return raw response if validation fails
-                return response
-        else:
-            # No response schema defined, return as-is
-            return response
-
-
 def subscribe(
     topic: str | type,
     version: str = "latest",
@@ -499,9 +386,16 @@ def subscribe(
             try:
                 validated = validation_model(**clean_data)
             except ValidationError as e:
+                fmt = format_validation_error(e)
                 logger.error(
-                    f"Validation failed for topic '{resolved_topic}' "
-                    f"(handler={func.__name__}, keys={list(clean_data.keys())}): {e}"
+                    f"Schema validation failed for topic '{resolved_topic}' "
+                    f"(handler={func.__name__}): {fmt['summary']}",
+                    extra={
+                        "topic": resolved_topic,
+                        "handler": func.__name__,
+                        "validation_errors": fmt["errors"],
+                        "data_keys": list(clean_data.keys()),
+                    },
                 )
                 raise EventValidationError(
                     str(e),
@@ -519,9 +413,15 @@ def subscribe(
                     try:
                         handler_arg = resolved_event_cls(**validated.model_dump())
                     except ValidationError as e:
+                        fmt = format_validation_error(e)
                         logger.error(
                             f"Event class validation failed for topic '{resolved_topic}' "
-                            f"(handler={func.__name__}, keys={list(validated.model_dump().keys())}): {e}"
+                            f"(handler={func.__name__}): {fmt['summary']}",
+                            extra={
+                                "topic": resolved_topic,
+                                "handler": func.__name__,
+                                "validation_errors": fmt["errors"],
+                            },
                         )
                         raise EventValidationError(
                             str(e),
@@ -539,12 +439,17 @@ def subscribe(
                         f"RPC error for '{resolved_topic}': {rpc_error.error_code} - {rpc_error.error_message}"
                     )
                     # Validate against error schema if defined
-                    if topic in _rpc_error_schemas:
-                        error_model = _rpc_error_schemas[topic]
+                    if resolved_topic in _rpc_error_schemas:
+                        error_model = _rpc_error_schemas[resolved_topic]
                         try:
                             return error_model(**error_response)
-                        except ValidationError:
-                            # If validation fails, return raw error dict
+                        except ValidationError as e:
+                            fmt = format_validation_error(e)
+                            logger.warning(
+                                f"RPC error response schema validation failed for '{resolved_topic}': "
+                                f"{fmt['summary']}",
+                                extra={"topic": resolved_topic, "validation_errors": fmt["errors"]},
+                            )
                             return error_response
                     return error_response
                 else:
@@ -558,16 +463,17 @@ def subscribe(
                     result = result.model_dump()
 
                 # Validate against response schema if defined
-                if topic in _rpc_response_schemas and isinstance(result, dict):
-                    response_model = _rpc_response_schemas[topic]
+                if resolved_topic in _rpc_response_schemas and isinstance(result, dict):
+                    response_model = _rpc_response_schemas[resolved_topic]
                     try:
                         return response_model(**result)
                     except ValidationError as e:
+                        fmt = format_validation_error(e)
                         logger.warning(
-                            f"Response validation failed for {topic}: {e}. "
-                            f"Returning raw response."
+                            f"RPC response schema validation failed for '{resolved_topic}': "
+                            f"{fmt['summary']}. Returning raw response.",
+                            extra={"topic": resolved_topic, "validation_errors": fmt["errors"]},
                         )
-                        # Return raw response if validation fails
                         return result
 
                 return result
