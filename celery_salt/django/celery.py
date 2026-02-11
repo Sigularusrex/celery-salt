@@ -146,6 +146,7 @@ def setup_salt_queue(
         "celery_salt.dispatch_event": {
             "queue": queue_name,
             "exchange": exchange_name,
+            "exchange_type": exchange_type,
             "routing_key": "celery_salt.dispatch_event",
         },
     }
