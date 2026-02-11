@@ -99,9 +99,41 @@ def validate(self, attrs):
 
 ## Overview
 
-The `context_provider` parameter in the `@auto_publish` decorator allows you to pass request context (like authentication information) to your event serializers. This is essential when your event serializers use `EventAuthorizationSerializer` or similar patterns that require request context for authorization validation.
+For event classes, `@auto_publish` uses **`payload_provider`** to build the complete event payload. Return `None` to skip publishing. Required when using `event_classes`.
 
-## The Problem
+## SaltEvent and payload_provider
+
+**SaltEvent** subclasses require all schema fields at initialization: `Event(**payload).publish()`. The legacy flow (`event_class()` + `serialize_request`) does not work because SaltEvent has no `serialize_request` and cannot be instantiated without data.
+
+Use `payload_provider` when your event extends SaltEvent and its schema includes request-derived fields (user, company, etc.):
+
+```python
+def get_product_payload(instance, event_type):
+    """Build full payload. Return None to skip (imports, bulk ops)."""
+    if not getattr(instance, "_event_request", None):
+        return None
+    auth = authorize_event({"request": instance._event_request})
+    if not auth.get("user"):
+        return None
+    return {
+        "id": instance.id,
+        "company_id": instance.company_id,
+        "sku": instance.sku,
+        # ... model fields ...
+        **auth,
+    }
+
+@auto_publish(
+    event_classes={"created": ProductCreatedEvent, "updated": ProductUpdatedEvent},
+    payload_provider=get_product_payload,
+)
+class Product(models.Model):
+    pass
+```
+
+Return `None` when context is missing (e.g. no `_event_request` on imports) so the decorator skips publishing.
+
+## The Problem (legacy context_provider)
 
 When manually publishing events, you typically pass context directly:
 

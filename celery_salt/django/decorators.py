@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from celery_salt.logging.handlers import get_logger
 
 if TYPE_CHECKING:
-    from celery_salt.integrations.client import TchuClient
+    from celery_salt.integrations.client import TchuClient as EventClient
 
 logger = get_logger(__name__)
 
@@ -25,57 +25,55 @@ def auto_publish(
     include_fields: list[str] | None = None,
     exclude_fields: list[str] | None = None,
     publish_on: list[str] | None = None,
-    client: "TchuClient | None" = None,
+    client: "EventClient | None" = None,
     condition: Callable | None = None,
     event_classes: dict[str, type] | None = None,
-    context_provider: Callable | None = None,
+    payload_provider: Callable[..., dict[str, Any] | None] | None = None,
 ):
     """
     Decorator for Django models that automatically publishes events on save/delete.
 
     Two modes:
         1. Raw mode (without event_classes): Publishes raw dicts to generated topics
-        2. Event class mode (with event_classes): Uses event classes with validation (legacy compatibility)
+        2. Event class + payload_provider: For SaltEvent subclasses. Provider builds
+           full payload; returns None to skip.
 
-    IMPORTANT: If your serializers use self.context, you MUST provide a context_provider.
-    See CONTEXT_PROVIDER_GUIDE.md for patterns.
+    For SaltEvent subclasses (e.g. with AuthorizedEventSchema): use payload_provider
+    to build the complete event payload (model fields + auth) and return None when
+    context is missing (imports, bulk ops). See CONTEXT_PROVIDER_GUIDE.md.
 
     Args:
         include_fields: List of fields to include (default: all fields)
         exclude_fields: List of fields to exclude
         publish_on: Events to publish ["created", "updated", "deleted"] (auto-inferred if using event_classes)
 
-        # Event class mode (recommended):
-        event_classes: Dict mapping event types to event classes (legacy compatibility)
-                      Example: {"created": MyCreatedEvent, "updated": MyUpdatedEvent}
-        context_provider: Function to extract context from instance for serializers
-                         Signature: (instance, event_type) -> Dict[str, Any]
+        # Event class mode:
+        event_classes: Dict mapping event types to event classes
+                      Example: {"created": ProductCreatedEvent, "updated": ProductUpdatedEvent}
+        payload_provider: (instance, event_type) -> dict | None. Builds full event payload.
+                         Return None to skip. Required when using event_classes.
 
         # Raw mode:
         topic_prefix: Prefix for topics (default: app_label.model_name)
-        client: Optional TchuClient (uses default app if None)
+        client: Optional event client (uses default if None)
 
         # Both modes:
         condition: Function to conditionally publish: (instance, event_type) -> bool
 
-    Example (event class mode):
-        def get_context(instance, event_type):
-            return {"user_id": instance._event_user_id}
+    Example:
+        def get_product_payload(instance, event_type):
+            if not getattr(instance, "_event_request", None):
+                return None
+            auth = authorize_event({"request": instance._event_request})
+            if not auth.get("user"):
+                return None
+            return {**_product_event_payload(instance), **auth}
 
         @auto_publish(
-            event_classes={"created": RiskCreatedEvent, "updated": RiskUpdatedEvent},
-            context_provider=get_context
+            event_classes={"created": ProductCreatedEvent, "updated": ProductUpdatedEvent},
+            payload_provider=get_product_payload,
         )
-        class Risk(models.Model):
-            pass
-
-    Example (raw mode):
-        @auto_publish(
-            topic_prefix="pulse.compliance",
-            include_fields=["id", "status"],
-            publish_on=["created", "updated"]
-        )
-        class Risk(models.Model):
+        class Product(models.Model):
             pass
     """
     if not DJANGO_AVAILABLE:
@@ -106,6 +104,11 @@ def auto_publish(
                     f"Invalid event types in event_classes: {invalid_types}. "
                     f"Valid types are: {valid_event_types}"
                 )
+            if not payload_provider:
+                raise ValueError(
+                    "payload_provider is required when using event_classes. "
+                    "SaltEvent subclasses need the full payload at init."
+                )
             # Auto-infer from event_classes keys
             events_to_publish = publish_on or list(event_classes.keys())
 
@@ -125,9 +128,9 @@ def auto_publish(
             if client is not None:
                 event_client = client
             else:
-                from celery_salt.integrations.client import TchuClient
+                from celery_salt.integrations.client import TchuClient as EventClient
 
-                event_client = TchuClient()
+                event_client = EventClient()
 
         def get_model_data(
             instance: models.Model, fields_changed: list[str] | None = None
@@ -194,30 +197,23 @@ def auto_publish(
                 return
 
             try:
-                data = get_model_data(instance, fields_changed)
-
                 if event_classes and event_type in event_classes:
-                    # Event class mode: use event class with its topic and serializers
                     event_class = event_classes[event_type]
-                    event_instance = event_class()
-
-                    # Get context if provider available
-                    context = None
-                    if context_provider:
-                        try:
-                            context = context_provider(instance, event_type)
-                        except Exception as ctx_err:
-                            logger.warning(
-                                f"Context provider failed: {ctx_err}. Publishing without context.",
-                                extra={"model_pk": instance.pk},
-                                exc_info=True,
-                            )
-
-                    # Serialize with validation and publish
-                    event_instance.serialize_request(data, context=context)
+                    try:
+                        payload = payload_provider(instance, event_type)
+                    except Exception as e:
+                        logger.warning(
+                            f"Payload provider failed: {e}. Skipping publish.",
+                            extra={"model_pk": instance.pk},
+                            exc_info=True,
+                        )
+                        return
+                    if payload is None:
+                        return  # Provider decided to skip
+                    event_instance = event_class(**payload)
                     event_instance.publish()
                 else:
-                    # Raw mode: publish via client or producer
+                    data = get_model_data(instance, fields_changed)
                     topic = f"{base_topic}.{event_type}"
                     event_client.publish(topic, data)
 
@@ -257,7 +253,7 @@ def auto_publish(
             post_delete.connect(handle_post_delete, sender=model_class, weak=False)
 
         # Add metadata to the model class
-        model_class._tchu_auto_publish_config = {
+        model_class._celerysalt_auto_publish_config = {
             "topic_prefix": topic_prefix,
             "base_topic": base_topic,
             "include_fields": include_fields,
@@ -266,15 +262,14 @@ def auto_publish(
             "client": event_client if not event_classes else None,
             "condition": condition,
             "event_classes": event_classes,
-            "context_provider": context_provider,
+            "payload_provider": payload_provider,
         }
 
         # Log configuration
         if event_classes:
             event_list = ", ".join(event_classes.keys())
-            context_note = " (with context)" if context_provider else ""
             logger.debug(
-                f"Auto-publish: {model_class.__name__} -> events: {event_list}{context_note}"
+                f"Auto-publish: {model_class.__name__} -> events: {event_list}"
             )
         else:
             logger.debug(
@@ -296,4 +291,4 @@ def get_auto_publish_config(model_class) -> dict[str, Any] | None:
     Returns:
         Configuration dictionary or None if not configured
     """
-    return getattr(model_class, "_tchu_auto_publish_config", None)
+    return getattr(model_class, "_celerysalt_auto_publish_config", None)
