@@ -8,7 +8,7 @@ inheritance, and hooks while maintaining compatibility with the decorator-based 
 from abc import ABC
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from celery_salt.core.event_utils import (
     ensure_schema_registered,
@@ -17,6 +17,7 @@ from celery_salt.core.event_utils import (
     validate_and_publish,
 )
 from celery_salt.logging.handlers import get_logger
+from celery_salt.logging.validation_errors import format_validation_error
 
 logger = get_logger(__name__)
 
@@ -114,7 +115,16 @@ class SaltEvent(ABC):
         Args:
             **kwargs: Event data matching Schema fields
         """
-        self.data = self.Schema(**kwargs)
+        try:
+            self.data = self.Schema(**kwargs)
+        except ValidationError as e:
+            fmt = format_validation_error(e)
+            topic = getattr(self.Meta, "topic", "unknown")
+            logger.error(
+                f"Event schema validation failed for topic '{topic}' on init: {fmt['summary']}",
+                extra={"topic": topic, "validation_errors": fmt["errors"]},
+            )
+            raise
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -204,9 +214,18 @@ class SaltEvent(ABC):
             raise ValueError(
                 f"respond() is only for RPC events; {self.Meta.topic} has mode={self.Meta.mode!r}"
             )
-        if data is not None:
-            return self.Response.model_validate(data)
-        return self.Response(**kwargs)
+        try:
+            if data is not None:
+                return self.Response.model_validate(data)
+            return self.Response(**kwargs)
+        except ValidationError as e:
+            fmt = format_validation_error(e)
+            logger.error(
+                f"RPC response schema validation failed for topic '{self.Meta.topic}' "
+                f"(respond): {fmt['summary']}",
+                extra={"topic": self.Meta.topic, "validation_errors": fmt["errors"]},
+            )
+            raise
 
     def publish(self, broker_url: str | None = None, **kwargs) -> str:
         """

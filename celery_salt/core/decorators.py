@@ -202,7 +202,15 @@ def _create_publish_method(
     @classmethod
     def publish(cls, broker_url: str | None = None, **kwargs) -> str:
         # 1. Validate data
-        validated = model(**kwargs)
+        try:
+            validated = model(**kwargs)
+        except ValidationError as e:
+            fmt = format_validation_error(e)
+            logger.error(
+                f"Publish schema validation failed for topic '{topic}': {fmt['summary']}",
+                extra={"topic": topic, "validation_errors": fmt["errors"]},
+            )
+            raise
 
         # 2. Ensure schema registered (safety net if import-time registration failed)
         version = getattr(cls, "_celerysalt_version", "v1")
@@ -243,7 +251,15 @@ def _create_rpc_method(
     @classmethod
     def call(cls, timeout: int = 30, **kwargs) -> Any:
         # 1. Validate request
-        validated = model(**kwargs)
+        try:
+            validated = model(**kwargs)
+        except ValidationError as e:
+            fmt = format_validation_error(e)
+            logger.error(
+                f"RPC request schema validation failed for topic '{topic}': {fmt['summary']}",
+                extra={"topic": topic, "validation_errors": fmt["errors"]},
+            )
+            raise
 
         # 2. Register schema if needed
         version = getattr(cls, "_celerysalt_version", "v1")

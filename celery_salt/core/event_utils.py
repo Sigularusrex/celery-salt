@@ -15,6 +15,7 @@ from celery_salt.core.exceptions import (
 )
 from celery_salt.core.registry import get_schema_registry
 from celery_salt.logging.handlers import get_logger
+from celery_salt.logging.validation_errors import format_validation_error
 
 logger = get_logger(__name__)
 
@@ -187,7 +188,15 @@ def validate_and_publish(
     from celery_salt.integrations.producer import publish_event
 
     # Validate data
-    validated = schema_model(**data)
+    try:
+        validated = schema_model(**data)
+    except ValidationError as e:
+        fmt = format_validation_error(e)
+        logger.error(
+            f"Publish schema validation failed for topic '{topic}': {fmt['summary']}",
+            extra={"topic": topic, "validation_errors": fmt["errors"]},
+        )
+        raise
 
     # Include version in publish_kwargs if provided
     if version:
@@ -237,7 +246,15 @@ def validate_and_call_rpc(
     from celery_salt.integrations.producer import call_rpc
 
     # Validate request
-    validated = schema_model(**data)
+    try:
+        validated = schema_model(**data)
+    except ValidationError as e:
+        fmt = format_validation_error(e)
+        logger.error(
+            f"RPC request schema validation failed for topic '{topic}': {fmt['summary']}",
+            extra={"topic": topic, "validation_errors": fmt["errors"]},
+        )
+        raise
 
     # Include version in call_kwargs if provided
     if version:
@@ -253,12 +270,20 @@ def validate_and_call_rpc(
     )
 
     # Validate response using shared utility
-    return _validate_rpc_response_with_models(
-        topic=topic,
-        response=response_data,
-        response_schema_model=response_schema_model,
-        error_schema_model=error_schema_model,
-    )
+    try:
+        return _validate_rpc_response_with_models(
+            topic=topic,
+            response=response_data,
+            response_schema_model=response_schema_model,
+            error_schema_model=error_schema_model,
+        )
+    except ValidationError as e:
+        fmt = format_validation_error(e)
+        logger.error(
+            f"RPC response schema validation failed for topic '{topic}': {fmt['summary']}",
+            extra={"topic": topic, "validation_errors": fmt["errors"]},
+        )
+        raise
 
 
 def _validate_rpc_response_with_models(
