@@ -63,20 +63,19 @@ class HandlerRegistry:
 
             return handler_info["id"]
 
+    def _get_handlers_unlocked(self, routing_key: str) -> list[dict[str, Any]]:
+        """Get handlers for a routing key. Caller must hold _lock."""
+        handlers = []
+        handlers.extend(self._handlers.get(routing_key, []))
+        for pattern, pattern_handlers in self._pattern_handlers.items():
+            if self._matches_pattern(routing_key, pattern):
+                handlers.extend(pattern_handlers)
+        return handlers
+
     def get_handlers(self, routing_key: str) -> list[dict[str, Any]]:
         """Get all handlers for a specific routing key."""
         with self._lock:
-            handlers = []
-
-            # Add exact match handlers
-            handlers.extend(self._handlers.get(routing_key, []))
-
-            # Add pattern match handlers
-            for pattern, pattern_handlers in self._pattern_handlers.items():
-                if self._matches_pattern(routing_key, pattern):
-                    handlers.extend(pattern_handlers)
-
-            return handlers
+            return self._get_handlers_unlocked(routing_key)
 
     def get_all_routing_keys(self) -> list[str]:
         """Get all registered routing keys and patterns."""
@@ -88,13 +87,10 @@ class HandlerRegistry:
         """Get count of handlers."""
         with self._lock:
             if routing_key is None:
-                # Count all handlers
                 total = sum(len(handlers) for handlers in self._handlers.values())
                 total += sum(len(handlers) for handlers in self._pattern_handlers.values())
                 return total
-            else:
-                # Count handlers for specific routing key
-                return len(self.get_handlers(routing_key))
+            return len(self._get_handlers_unlocked(routing_key))
 
     def _matches_pattern(self, routing_key: str, pattern: str) -> bool:
         """Check if a routing key matches a wildcard pattern."""
