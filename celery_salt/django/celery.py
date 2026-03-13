@@ -104,7 +104,7 @@ def setup_salt_queue(
         ),
     )
 
-    @celeryd_after_setup.connect
+    @celeryd_after_setup.connect(weak=False)
     def _setup_queue_on_worker_init(sender, instance, **kwargs):
         """
         Configure queue bindings after Celery worker setup but before consuming.
@@ -124,9 +124,19 @@ def setup_salt_queue(
         # Update queue configuration with proper bindings
         _configure_queue_bindings(all_routing_keys)
 
-    @worker_ready.connect
+        # Invalidate the cached_property so the Consumer bootstep
+        # (which starts AFTER this signal) reads the updated task_queues.
+        # app.amqp.queues is a @cached_property evaluated during
+        # WorkController.__init__ (before this signal fires), so it holds
+        # the stale direct-routing queue from the initial config above.
+        try:
+            del celery_app.amqp.__dict__["queues"]
+        except KeyError:
+            pass  # Not yet cached
+
+    @worker_ready.connect(weak=False)
     def _log_on_worker_ready(sender=None, **kwargs):
-        """Log summary when worker is fully ready."""
+        """Log summary when worker is fully ready and ensure broker bindings."""
         from celery_salt.integrations.registry import get_handler_registry
 
         handler_count = get_handler_registry().get_handler_count()
@@ -140,6 +150,32 @@ def setup_salt_queue(
             logger.debug(
                 f"Tchu-tchu: queue '{queue_name}' ready ({handler_count} handlers)"
             )
+
+        # Explicitly ensure all bindings exist on the broker as defense-in-depth.
+        # Handles edge cases where Celery's queue declaration doesn't reconcile
+        # with existing RabbitMQ state (e.g. queue already exists with stale bindings).
+        all_routing_keys = get_subscribed_routing_keys()
+        if all_routing_keys:
+            try:
+                with celery_app.connection_for_write() as conn:
+                    channel = conn.default_channel
+                    tchu_exchange.declare(channel=channel)
+                    for key in all_routing_keys:
+                        channel.queue_bind(
+                            queue=queue_name,
+                            exchange=tchu_exchange.name,
+                            routing_key=key,
+                        )
+                    logger.info(
+                        "Verified %d binding(s) on broker for queue '%s'",
+                        len(all_routing_keys),
+                        queue_name,
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to verify broker bindings for queue '%s'",
+                    queue_name,
+                )
 
     # Route dispatcher task to this queue (no database access needed)
     celery_app.conf.task_routes = {
