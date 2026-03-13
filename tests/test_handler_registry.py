@@ -1,7 +1,5 @@
 """Tests for HandlerRegistry - routing key to handler mappings."""
 
-import pytest
-
 from celery_salt.integrations.registry import HandlerRegistry
 
 
@@ -14,6 +12,7 @@ class TestHandlerRegistry:
 
     def test_register_and_get_handlers_exact_match(self):
         """Register handler and retrieve by exact routing key."""
+
         def handler():
             pass
 
@@ -24,6 +23,7 @@ class TestHandlerRegistry:
 
     def test_get_handler_count_total(self):
         """get_handler_count with no routing_key returns total count."""
+
         def h1():
             pass
 
@@ -37,6 +37,7 @@ class TestHandlerRegistry:
 
     def test_get_handler_count_for_routing_key(self):
         """get_handler_count(routing_key) returns count for that key without deadlock."""
+
         def h1():
             pass
 
@@ -53,6 +54,7 @@ class TestHandlerRegistry:
 
     def test_get_handler_count_with_pattern_handlers(self):
         """get_handler_count with pattern-registered handlers."""
+
         def h1():
             pass
 
@@ -66,6 +68,7 @@ class TestHandlerRegistry:
 
     def test_get_all_routing_keys(self):
         """get_all_routing_keys returns registered keys."""
+
         def h():
             pass
 
