@@ -248,13 +248,14 @@ def publish_event(
             "routing_key": topic,
             "message_id": message_id,
             "transport": transport,
+            "data": data,
         }
         if correlation_id:
             _log_extra["correlation_id"] = correlation_id
         if version:
             _log_extra["version"] = version
         logger.info(
-            f"Published event to '{topic}' (message_id={message_id}, transport={transport})",
+            f"Published event to '{topic}' (message_id={message_id}, transport={transport}) data={data}",
             extra=_log_extra,
         )
 
@@ -413,13 +414,13 @@ def call_rpc(
             **send_options,
         )
 
-        _log_extra = {"routing_key": topic, "message_id": message_id}
+        _log_extra = {"routing_key": topic, "message_id": message_id, "data": data}
         if correlation_id:
             _log_extra["correlation_id"] = correlation_id
         if version:
             _log_extra["version"] = version
         logger.info(
-            f"RPC call {message_id} sent to routing key '{topic}'",
+            f"RPC call {message_id} sent to routing key '{topic}' data={data}",
             extra=_log_extra,
         )
 
