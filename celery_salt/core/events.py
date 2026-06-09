@@ -264,16 +264,28 @@ class SaltEvent(ABC):
             **kwargs,
         )
 
-    def call(self, timeout: int = 30, **kwargs) -> Any:
+    def call(
+        self,
+        timeout: int = 30,
+        priority: int = 9,
+        expires: int | None = None,
+        **kwargs,
+    ) -> Any:
         """
         Make RPC call and wait for response.
 
         Only for events with mode="rpc".
 
         Args:
-            timeout: Response timeout in seconds
-            **kwargs: When using Celery, forwarded to send_task (e.g. priority=5, countdown=10).
-                Handler retries/priority are set via @subscribe(..., autoretry_for=..., priority=...).
+            timeout: Response timeout in seconds (default: 30)
+            priority: Message priority 0-9 (default: 9). RPC tasks default to maximum
+                priority so they are not starved behind bulk broadcast tasks when
+                workers are busy. Requires the queue to be declared with x-max-priority.
+            expires: Seconds before an unstarted task is discarded (default: same as
+                timeout). Prevents workers from picking up stale RPC tasks after the
+                caller has already given up.
+            **kwargs: Additional Celery send_task options (e.g. countdown=10).
+                Handler retries/priority are set via @subscribe(..., autoretry_for=...).
 
         Returns:
             SaltResponse: Wrapper with ``.event``, ``.data`` (Response/Error model),
@@ -286,6 +298,9 @@ class SaltEvent(ABC):
         """
         if self.Meta.mode != "rpc":
             raise ValueError(f"Cannot call() on broadcast event {self.Meta.topic}")
+
+        if expires is None:
+            expires = timeout
 
         # Ensure schema is registered (safety net)
         ensure_schema_registered(
@@ -309,6 +324,8 @@ class SaltEvent(ABC):
             response_schema_model=getattr(self, "Response", None),
             error_schema_model=getattr(self, "Error", None),
             version=self.Meta.version,
+            priority=priority,
+            expires=expires,
             **kwargs,
         )
         return SaltResponse(event=self, data=raw)

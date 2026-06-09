@@ -57,9 +57,7 @@ class EventValidationError(CelerySaltError):
         self.topic = topic
         self.handler_name = handler_name
         self.validation_error = validation_error
-        full_message = (
-            f"Event validation failed for topic '{topic}' (handler {handler_name}): {message}"
-        )
+        full_message = f"Event validation failed for topic '{topic}' (handler {handler_name}): {message}"
         super().__init__(full_message, details or {})
 
     def __str__(self) -> str:

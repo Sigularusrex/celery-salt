@@ -22,6 +22,7 @@ def setup_salt_queue(
     exchange_type: str = "topic",
     durable: bool = True,
     auto_delete: bool = False,
+    max_priority: int | None = 10,
 ) -> None:
     """
     Set up Salt queue (topic exchange, dispatcher, bindings) for celery-salt event handlers.
@@ -57,12 +58,23 @@ def setup_salt_queue(
         exchange_type: Exchange type (default: "topic")
         durable: Whether queue is durable (default: True)
         auto_delete: Whether queue auto-deletes (default: False)
+        max_priority: Maximum message priority supported by this queue (0-255, default: 10).
+            Enables RabbitMQ priority queuing so RPC tasks (priority=9 by default) are
+            picked up before lower-priority broadcast tasks when workers are busy.
+            Set to None to disable priority queuing (e.g. if the queue already exists
+            without x-max-priority and cannot be deleted and recreated).
+            NOTE: changing this on an existing queue requires deleting and recreating
+            the queue in RabbitMQ — it rejects re-declaration with different arguments.
     """
     if subscriber_modules is None:
         subscriber_modules = getattr(celery_app.conf, "include", None) or []
 
     # Create topic exchange (no database access needed)
     tchu_exchange = Exchange(exchange_name, type=exchange_type, durable=durable)
+
+    queue_arguments = (
+        {"x-max-priority": max_priority} if max_priority is not None else {}
+    )
 
     def _configure_queue_bindings(routing_keys: list[str]) -> None:
         """Configure queue with the given routing keys."""
@@ -75,6 +87,7 @@ def setup_salt_queue(
                 bindings=all_bindings,
                 durable=durable,
                 auto_delete=auto_delete,
+                queue_arguments=queue_arguments,
             ),
         )
 
@@ -101,6 +114,7 @@ def setup_salt_queue(
             routing_key=queue_name,  # Basic direct routing initially
             durable=durable,
             auto_delete=auto_delete,
+            queue_arguments=queue_arguments,
         ),
     )
 

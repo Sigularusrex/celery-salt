@@ -221,3 +221,93 @@ class TestSaltEventRealFunctionality:
         error = CalculatorAdd.Error(error_code="INVALID", error_message="Bad input")
         assert error.error_code == "INVALID"
         assert error.error_message == "Bad input"
+
+    def test_call_defaults_priority_9_and_expires_equals_timeout(self):
+        """call() must default to priority=9 and expires=timeout to prevent worker starvation."""
+        from unittest.mock import patch
+
+        class PingRpc(SaltEvent):
+            class Schema(BaseModel):
+                pass
+
+            class Meta:
+                topic = "rpc.ping"
+                mode = "rpc"
+
+        event = PingRpc()
+
+        with patch("celery_salt.integrations.producer.call_rpc") as mock_call_rpc:
+            mock_call_rpc.return_value = None
+            try:
+                event.call(timeout=30)
+            except Exception:
+                pass  # response validation may fail; we only care about the call args
+
+        mock_call_rpc.assert_called_once()
+        _, kwargs = mock_call_rpc.call_args
+        assert kwargs.get("priority") == 9, "RPC call must default to priority=9"
+        assert kwargs.get("expires") == 30, "RPC expires must default to timeout value"
+
+    def test_call_expires_matches_custom_timeout(self):
+        """expires should track a custom timeout when not explicitly set."""
+        from unittest.mock import patch
+
+        class PingRpc(SaltEvent):
+            class Schema(BaseModel):
+                pass
+
+            class Meta:
+                topic = "rpc.ping.timeout"
+                mode = "rpc"
+
+        event = PingRpc()
+
+        with patch("celery_salt.integrations.producer.call_rpc") as mock_call_rpc:
+            mock_call_rpc.return_value = None
+            try:
+                event.call(timeout=60)
+            except Exception:
+                pass
+
+        _, kwargs = mock_call_rpc.call_args
+        assert kwargs.get("expires") == 60
+
+    def test_call_allows_overriding_priority_and_expires(self):
+        """Callers must be able to override priority and expires explicitly."""
+        from unittest.mock import patch
+
+        class PingRpc(SaltEvent):
+            class Schema(BaseModel):
+                pass
+
+            class Meta:
+                topic = "rpc.ping.override"
+                mode = "rpc"
+
+        event = PingRpc()
+
+        with patch("celery_salt.integrations.producer.call_rpc") as mock_call_rpc:
+            mock_call_rpc.return_value = None
+            try:
+                event.call(timeout=30, priority=5, expires=10)
+            except Exception:
+                pass
+
+        _, kwargs = mock_call_rpc.call_args
+        assert kwargs.get("priority") == 5
+        assert kwargs.get("expires") == 10
+
+    def test_call_broadcast_event_raises(self):
+        """call() on a broadcast event must raise ValueError."""
+
+        class BroadcastEvent(SaltEvent):
+            class Schema(BaseModel):
+                pass
+
+            class Meta:
+                topic = "broadcast.thing"
+                mode = "broadcast"
+
+        event = BroadcastEvent()
+        with pytest.raises(ValueError, match="broadcast"):
+            event.call()

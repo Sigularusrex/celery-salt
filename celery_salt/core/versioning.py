@@ -22,7 +22,6 @@ This is the standard approach used by pip, npm, and other package managers.
 """
 
 
-
 def compare_versions(v1: str, v2: str) -> int:
     """
     Compare two version strings.

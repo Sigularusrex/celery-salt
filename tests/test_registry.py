@@ -102,9 +102,18 @@ class TestInMemorySchemaRegistry:
 
     def test_get_schema_latest_version(self):
         """Test getting latest version of schema."""
-        schema_v1 = {"type": "object", "properties": {"version": {"type": "string", "default": "v1"}}}
-        schema_v2 = {"type": "object", "properties": {"version": {"type": "string", "default": "v2"}}}
-        schema_v10 = {"type": "object", "properties": {"version": {"type": "string", "default": "v10"}}}
+        schema_v1 = {
+            "type": "object",
+            "properties": {"version": {"type": "string", "default": "v1"}},
+        }
+        schema_v2 = {
+            "type": "object",
+            "properties": {"version": {"type": "string", "default": "v2"}},
+        }
+        schema_v10 = {
+            "type": "object",
+            "properties": {"version": {"type": "string", "default": "v10"}},
+        }
 
         self.registry.register_schema(
             topic="test.topic",
@@ -135,8 +144,14 @@ class TestInMemorySchemaRegistry:
     def test_register_rpc_schema_with_response_error(self):
         """Test registering RPC schema with response and error schemas."""
         request_schema = {"type": "object", "properties": {"a": {"type": "number"}}}
-        response_schema = {"type": "object", "properties": {"result": {"type": "number"}}}
-        error_schema = {"type": "object", "properties": {"error_code": {"type": "string"}}}
+        response_schema = {
+            "type": "object",
+            "properties": {"result": {"type": "number"}},
+        }
+        error_schema = {
+            "type": "object",
+            "properties": {"error_code": {"type": "string"}},
+        }
 
         result = self.registry.register_schema(
             topic="rpc.test",

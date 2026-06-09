@@ -85,7 +85,9 @@ def _resolve_broker_url(broker_url: str | None, app: Any | None) -> str | None:
     try:
         from django.conf import settings
 
-        return getattr(settings, "CELERY_BROKER_URL", None) or getattr(settings, "BROKER_URL", None)
+        return getattr(settings, "CELERY_BROKER_URL", None) or getattr(
+            settings, "BROKER_URL", None
+        )
     except (ImportError, RuntimeError):
         return None
 

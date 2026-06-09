@@ -95,7 +95,9 @@ class InMemorySchemaRegistry:
                         f"No schema found for topic: {topic}"
                     )
                 # Simple version comparison (v1, v2, etc.)
-                version = max(versions, key=lambda v: int(v[1:]) if v[1:].isdigit() else 0)
+                version = max(
+                    versions, key=lambda v: int(v[1:]) if v[1:].isdigit() else 0
+                )
 
             key = f"{topic}:{version}"
             if key not in self._schemas:

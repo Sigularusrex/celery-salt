@@ -71,6 +71,7 @@ app.conf.enable_utc = True
 # Create the dispatcher task first (needed for routing)
 dispatcher = create_topic_dispatcher(app)
 
+
 # Subscribe to events (must be before queue setup so handlers are registered)
 @subscribe("user.signup.completed", autoretry_for=(Exception,), max_retries=3)
 def send_welcome_email(data: UserSignupCompleted):
