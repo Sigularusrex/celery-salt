@@ -227,7 +227,9 @@ class SaltEvent(ABC):
             )
             raise
 
-    def publish(self, broker_url: str | None = None, **kwargs) -> str:
+    def publish(
+        self, broker_url: str | None = None, priority: int = 5, **kwargs
+    ) -> str:
         """
         Publish event to message broker.
 
@@ -235,6 +237,8 @@ class SaltEvent(ABC):
 
         Args:
             broker_url: Optional broker URL
+            priority: Message priority 0-9 (default: 5). Override with a lower value
+                for high-volume bulk events that should yield to others.
             **kwargs: When using Celery, forwarded to send_task (e.g. countdown=10, expires=60).
                 For handler priority/retries, set on the handler via @subscribe(..., priority=5, autoretry_for=(Exception,)).
 
@@ -261,6 +265,7 @@ class SaltEvent(ABC):
             exchange_name=self.Meta.exchange_name,
             broker_url=broker_url,
             version=self.Meta.version,
+            priority=priority,
             **kwargs,
         )
 
