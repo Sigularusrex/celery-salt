@@ -131,9 +131,7 @@ def test_broker_bindings_declared_on_worker_ready(celery_test_app):
     with patch(
         "celery_salt.django.celery.get_subscribed_routing_keys",
         return_value=["rpc.test.list", "event.product.updated"],
-    ), patch.object(
-        celery_test_app, "connection_for_write", return_value=mock_conn
-    ):
+    ), patch.object(celery_test_app, "connection_for_write", return_value=mock_conn):
         worker_ready.send(sender=MagicMock())
 
     # Verify queue_bind was called for each routing key
@@ -191,3 +189,73 @@ def test_no_bindings_skips_broker_call(celery_test_app):
         worker_ready.send(sender=MagicMock())
 
     mock_conn.assert_not_called()
+
+
+def test_queue_declared_with_max_priority_by_default(celery_test_app):
+    """Queue must carry x-max-priority=10 by default to enable RabbitMQ priority queuing."""
+    with patch(
+        "celery_salt.django.celery.get_subscribed_routing_keys",
+        return_value=["rpc.test"],
+    ), patch("celery_salt.django.celery.create_topic_dispatcher"):
+        setup_salt_queue(
+            celery_test_app,
+            queue_name="test_queue",
+            subscriber_modules=[],
+        )
+
+    # Initial queue (before celeryd_after_setup) must include queue_arguments
+    initial_queue = celery_test_app.conf.task_queues[0]
+    assert initial_queue.queue_arguments == {"x-max-priority": 10}
+
+    # After celeryd_after_setup the reconfigured queue must also carry it
+    with patch(
+        "celery_salt.django.celery.get_subscribed_routing_keys",
+        return_value=["rpc.test"],
+    ):
+        celeryd_after_setup.send(sender="test_worker", instance=MagicMock())
+
+    updated_queue = celery_test_app.conf.task_queues[0]
+    assert updated_queue.queue_arguments == {"x-max-priority": 10}
+
+
+def test_queue_no_priority_when_max_priority_none(celery_test_app):
+    """Passing max_priority=None must omit queue_arguments entirely."""
+    with patch(
+        "celery_salt.django.celery.get_subscribed_routing_keys",
+        return_value=["rpc.test"],
+    ), patch("celery_salt.django.celery.create_topic_dispatcher"):
+        setup_salt_queue(
+            celery_test_app,
+            queue_name="test_queue",
+            subscriber_modules=[],
+            max_priority=None,
+        )
+
+    initial_queue = celery_test_app.conf.task_queues[0]
+    assert not initial_queue.queue_arguments
+
+    with patch(
+        "celery_salt.django.celery.get_subscribed_routing_keys",
+        return_value=["rpc.test"],
+    ):
+        celeryd_after_setup.send(sender="test_worker", instance=MagicMock())
+
+    updated_queue = celery_test_app.conf.task_queues[0]
+    assert not updated_queue.queue_arguments
+
+
+def test_queue_custom_max_priority(celery_test_app):
+    """max_priority value must be forwarded into x-max-priority queue argument."""
+    with patch(
+        "celery_salt.django.celery.get_subscribed_routing_keys",
+        return_value=["rpc.test"],
+    ), patch("celery_salt.django.celery.create_topic_dispatcher"):
+        setup_salt_queue(
+            celery_test_app,
+            queue_name="test_queue",
+            subscriber_modules=[],
+            max_priority=5,
+        )
+
+    initial_queue = celery_test_app.conf.task_queues[0]
+    assert initial_queue.queue_arguments == {"x-max-priority": 5}

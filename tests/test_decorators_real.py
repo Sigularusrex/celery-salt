@@ -18,6 +18,7 @@ class TestEventDecoratorReal:
 
     def test_event_decorator_creates_pydantic_model(self):
         """Test that @event decorator actually creates a working Pydantic model."""
+
         @event("test.topic")
         class TestEvent:
             user_id: int
@@ -34,6 +35,7 @@ class TestEventDecoratorReal:
 
     def test_event_decorator_registers_schema(self):
         """Test that @event decorator actually registers schema to registry."""
+
         @event("test.topic")
         class TestEvent:
             user_id: int
@@ -48,6 +50,7 @@ class TestEventDecoratorReal:
 
     def test_event_decorator_with_default_values(self):
         """Test @event decorator with default values."""
+
         @event("test.topic")
         class TestEvent:
             user_id: int
@@ -64,6 +67,7 @@ class TestEventDecoratorReal:
 
     def test_event_decorator_with_custom_version(self):
         """Test @event decorator with custom version."""
+
         @event("test.topic", version="v2")
         class TestEvent:
             user_id: int
@@ -78,6 +82,7 @@ class TestEventDecoratorReal:
 
     def test_event_decorator_skips_private_attributes(self):
         """Test that @event decorator skips private attributes."""
+
         @event("test.topic")
         class TestEvent:
             user_id: int
@@ -92,6 +97,7 @@ class TestEventDecoratorReal:
 
     def test_event_decorator_publish_validates_data(self):
         """Test that publish method validates data before publishing."""
+
         @event("test.topic")
         class TestEvent:
             user_id: int
@@ -99,6 +105,7 @@ class TestEventDecoratorReal:
 
         # Valid data should work (we'll mock the actual publish)
         from unittest.mock import patch
+
         with patch("celery_salt.integrations.producer.publish_event") as mock_publish:
             mock_publish.return_value = "message_123"
             message_id = TestEvent.publish(
@@ -130,6 +137,7 @@ class TestSubscribeDecoratorReal:
 
     def test_subscribe_decorator_creates_handler(self):
         """Test that @subscribe decorator creates a callable handler."""
+
         @subscribe("test.topic")
         def handler(data):
             return f"Processed {data.user_id}"

@@ -59,7 +59,9 @@ class HandlerRegistry:
                 )
             else:
                 self._handlers[routing_key].append(handler_info)
-                logger.debug(f"Registered handler '{name}' for routing key '{routing_key}'")
+                logger.debug(
+                    f"Registered handler '{name}' for routing key '{routing_key}'"
+                )
 
             return handler_info["id"]
 
@@ -88,7 +90,9 @@ class HandlerRegistry:
         with self._lock:
             if routing_key is None:
                 total = sum(len(handlers) for handlers in self._handlers.values())
-                total += sum(len(handlers) for handlers in self._pattern_handlers.values())
+                total += sum(
+                    len(handlers) for handlers in self._pattern_handlers.values()
+                )
                 return total
             return len(self._get_handlers_unlocked(routing_key))
 
@@ -97,7 +101,9 @@ class HandlerRegistry:
         # Convert wildcard pattern to regex
         # * matches any sequence of characters (but not dots)
         # # matches zero or more words (separated by dots)
-        regex_pattern = pattern.replace(".", r"\.").replace("*", "[^.]*").replace("#", ".*")
+        regex_pattern = (
+            pattern.replace(".", r"\.").replace("*", "[^.]*").replace("#", ".*")
+        )
         regex_pattern = f"^{regex_pattern}$"
 
         try:

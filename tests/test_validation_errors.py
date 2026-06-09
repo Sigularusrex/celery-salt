@@ -11,6 +11,7 @@ class TestFormatValidationError:
 
     def test_single_error(self):
         """Single validation error produces correct summary and structure."""
+
         class Model(BaseModel):
             email: str
             age: int
@@ -27,6 +28,7 @@ class TestFormatValidationError:
 
     def test_multiple_errors(self):
         """Multiple validation errors produce joined summary."""
+
         class Model(BaseModel):
             email: str
             age: int
@@ -41,6 +43,7 @@ class TestFormatValidationError:
 
     def test_more_than_five_errors_truncates_summary(self):
         """More than 5 errors adds '... and N more' to summary."""
+
         class Model(BaseModel):
             a: int
             b: int
@@ -58,6 +61,7 @@ class TestFormatValidationError:
 
     def test_nested_loc_path(self):
         """Nested and indexed loc tuples produce readable paths."""
+
         class Item(BaseModel):
             email: str
 
