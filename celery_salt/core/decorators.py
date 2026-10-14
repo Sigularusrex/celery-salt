@@ -336,6 +336,8 @@ def _create_validated_handler(
 ) -> Callable:
     """Build the inner Celery task that validates payload and invokes the handler."""
 
+    is_wildcard = _is_wildcard_topic(resolved_topic)
+
     def validated_handler(self: Any, raw_data: dict) -> Any:
         meta = raw_data.get("_tchu_meta", {})
         is_rpc = meta.get("is_rpc", False)
@@ -383,6 +385,15 @@ def _create_validated_handler(
                     handler_name=func.__name__,
                     validation_error=e,
                 ) from e
+
+        if is_wildcard:
+            from celery_salt.core.events import WildcardEvent
+
+            # Messages dispatched by an older dispatcher carry no routing_key; fall back to
+            # the subscription pattern.
+            handler_arg = WildcardEvent(
+                topic=meta.get("routing_key") or resolved_topic, data=validated
+            )
 
         try:
             result = func(handler_arg)

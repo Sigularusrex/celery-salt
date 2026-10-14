@@ -386,3 +386,27 @@ class SaltEvent(ABC):
                 error_schema_model=getattr(cls, "Error", None),
                 auto_register=True,
             )
+
+
+class WildcardEvent:
+    """
+    What a wildcard subscriber (`@subscribe("#")`, `@subscribe("user.*")`) receives.
+
+    A catch-all handler serves many topics, so it gets the concrete topic the message was
+    published on alongside the permissive payload. Attribute access proxies to the payload,
+    as on SaltEvent, so `event.user_id` and `event.model_dump()` work directly.
+    """
+
+    def __init__(self, topic: str, data: BaseModel):
+        self.topic = topic
+        self.data = data
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.data, name)
+
+    def model_dump(self, **kwargs) -> dict[str, Any]:
+        return self.data.model_dump(**kwargs)
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        return self.data.model_dump()

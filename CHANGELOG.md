@@ -5,6 +5,14 @@ All notable changes to CelerySalt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-10-14
+
+### Changed
+- Wildcard subscribers receive a `WildcardEvent` carrying the concrete `topic` the message was published on, plus the payload as `data`. Attribute access and `model_dump()` proxy to the payload, so 1.6.0 handlers that read fields directly keep working. The dispatcher records the routing key in the message's `_tchu_meta`, not as a task kwarg, so workers still on 1.6.0 can run the handler tasks during a rolling deploy. Messages dispatched without it fall back to the subscription pattern.
+
+### Fixed
+- Wildcard subscriptions no longer receive RPC requests. A queue bound with `#` also receives every RPC request on the exchange, and its dispatcher stored a result under the same task id the caller waits on, racing the real responder. Wildcard handlers are now skipped for RPC, and when only wildcard handlers matched, the dispatcher raises Celery's `Ignore` so no result is stored. Messages without `_tchu_meta` (tchu-tchu) are treated as RPC, as before, so wildcard handlers don't receive them.
+
 ## [1.6.0] - 2026-10-12
 
 ### Added

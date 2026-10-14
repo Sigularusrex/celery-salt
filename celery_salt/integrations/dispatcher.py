@@ -9,6 +9,7 @@ import json
 import time
 from typing import Any
 
+from celery.exceptions import Ignore
 from pydantic import BaseModel
 
 from celery_salt.core.decorators import DEFAULT_DISPATCHER_TASK_NAME
@@ -28,6 +29,11 @@ from celery_salt.observability.opentelemetry import set_dispatch_span_attributes
 from celery_salt.utils.json_encoder import dumps_message, loads_message
 
 logger = get_logger(__name__)
+
+
+def _is_pattern_handler(handler_info: dict[str, Any]) -> bool:
+    routing_key = handler_info.get("routing_key", "")
+    return "*" in routing_key or "#" in routing_key
 
 
 def create_topic_dispatcher(
@@ -92,6 +98,10 @@ def create_topic_dispatcher(
                 )
             else:
                 tchu_meta = deserialized["_tchu_meta"]
+                # Lets a wildcard handler know which topic it received. Carried in the
+                # message rather than as a task kwarg so workers on an older version can
+                # still run the handler task during a rolling deploy.
+                tchu_meta["routing_key"] = routing_key
                 is_rpc = tchu_meta.get("is_rpc", False)
                 message_version = tchu_meta.get("version")
                 correlation_id = tchu_meta.get("correlation_id")
@@ -142,6 +152,19 @@ def create_topic_dispatcher(
                             f"Consider upgrading subscriber to {message_version}."
                         )
                     handlers.append(handler_info)
+
+            if is_rpc:
+                concrete_handlers = [h for h in handlers if not _is_pattern_handler(h)]
+                if handlers and not concrete_handlers:
+                    # This queue got the request only through a wildcard binding. Another
+                    # service owns the RPC and its reply is stored under this same task id,
+                    # so storing any result here would race it and could answer the caller.
+                    logger.debug(
+                        f"RPC '{routing_key}' matched only wildcard handlers, ignoring",
+                        extra={"routing_key": routing_key},
+                    )
+                    raise Ignore()
+                handlers = concrete_handlers
 
             if not handlers:
                 duration_seconds = time.perf_counter() - started_at
@@ -314,6 +337,8 @@ def create_topic_dispatcher(
                 "results": results,
             }
 
+        except Ignore:
+            raise
         except Exception as e:
             duration_seconds = time.perf_counter() - started_at
             metrics.record_error(
