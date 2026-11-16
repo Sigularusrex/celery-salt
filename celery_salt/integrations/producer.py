@@ -11,6 +11,7 @@ so .publish() and .call() work from views with no extra code.
 """
 
 import json
+import logging
 import os
 import uuid
 from typing import Any
@@ -248,16 +249,21 @@ def publish_event(
             "routing_key": topic,
             "message_id": message_id,
             "transport": transport,
-            "data": data,
         }
         if correlation_id:
             _log_extra["correlation_id"] = correlation_id
         if version:
             _log_extra["version"] = version
         logger.info(
-            f"Published event to '{topic}' (message_id={message_id}, transport={transport}) data={data}",
+            f"Published event to '{topic}' (message_id={message_id}, transport={transport})",
             extra=_log_extra,
         )
+        # Payloads can be large and contain PII; only emit them at DEBUG.
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Published event payload for '{topic}' (message_id={message_id})",
+                extra={**_log_extra, "data": data},
+            )
 
         return message_id
 
