@@ -246,7 +246,7 @@ def create_topic_dispatcher(
                                 "task_id": async_result.id,
                             }
                         )
-                        logger.info(
+                        logger.debug(
                             f"Subscriber '{handler_name}' dispatched for '{routing_key}'",
                             extra={
                                 "handler": handler_name,

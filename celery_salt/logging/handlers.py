@@ -89,7 +89,7 @@ def log_dispatch_completed(
             extra=extra,
         )
     else:
-        logger.info(
+        logger.debug(
             "Dispatch completed",
             extra=extra,
         )
